@@ -467,6 +467,7 @@ export function FeesDashboardClient({ profiles: initialProfiles, recentPayments,
                     <th className="py-3 px-4 font-semibold">Mode</th>
                     <th className="py-3 px-4 font-semibold">Received By</th>
                     <th className="py-3 px-4 font-semibold">Date</th>
+                    <th className="py-3 px-4 font-semibold text-right">Receipt</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60">
@@ -485,6 +486,16 @@ export function FeesDashboardClient({ profiles: initialProfiles, recentPayments,
                       </td>
                       <td className="py-2.5 px-4 text-zinc-400">{p.paymentReceivedBy}</td>
                       <td className="py-2.5 px-4 text-zinc-500 font-mono text-[11px]">{formatDate(p.paymentDate)}</td>
+                      <td className="py-2.5 px-4 text-right">
+                        <Link
+                          href={`/fees/receipt/${encodeURIComponent(p.receiptNumber)}`}
+                          target="_blank"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/60 transition-colors"
+                        >
+                          <Receipt className="w-3 h-3" />
+                          Slip
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -900,6 +911,7 @@ export function FeesDashboardClient({ profiles: initialProfiles, recentPayments,
                         <th className="py-2 px-3 font-semibold">Mode</th>
                         <th className="py-2 px-3 font-semibold">By</th>
                         <th className="py-2 px-3 font-semibold">Date</th>
+                        <th className="py-2 px-3 font-semibold text-right">Receipt</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-800/60">
@@ -916,6 +928,16 @@ export function FeesDashboardClient({ profiles: initialProfiles, recentPayments,
                           </td>
                           <td className="py-2 px-3 text-zinc-400">{p.paymentReceivedBy}</td>
                           <td className="py-2 px-3 text-zinc-500 font-mono text-[11px]">{formatDate(p.paymentDate)}</td>
+                          <td className="py-2 px-3 text-right">
+                            <Link
+                              href={`/fees/receipt/${encodeURIComponent(p.receiptNumber)}`}
+                              target="_blank"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/60 transition-colors"
+                            >
+                              <Receipt className="w-2.5 h-2.5" />
+                              Slip
+                            </Link>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

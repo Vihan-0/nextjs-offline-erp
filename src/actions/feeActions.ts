@@ -25,11 +25,11 @@ async function generateReceiptNumber(year: number): Promise<string> {
  * A month is considered overdue if today is past the 10th of the following month.
  * Returns: number of overdue months, total fine owed.
  */
-export function computeLateFineForMonth(
+export async function computeLateFineForMonth(
   monthLabel: string, // e.g. "April 2026"
   lateFeeRate: number,
   alreadyPaid: boolean
-): { isOverdue: boolean; fineAmount: number } {
+): Promise<{ isOverdue: boolean; fineAmount: number }> {
   if (alreadyPaid) return { isOverdue: false, fineAmount: 0 };
 
   try {
@@ -90,7 +90,7 @@ export async function getStudentFeeOverview(studentSrNumber: string) {
     const currentMonthPaid = paidMonths.has(currentMonthLabel);
 
     // Compute dynamic late fine for current month
-    const { isOverdue, fineAmount } = computeLateFineForMonth(
+    const { isOverdue, fineAmount } = await computeLateFineForMonth(
       currentMonthLabel,
       profile.lateFeeRatePerMonth,
       currentMonthPaid
@@ -318,34 +318,36 @@ export async function getFeesDashboardData(filters: FeesDashboardFilters = {}) {
     const currentMonthLabel = now.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
     // Enrich each profile with dynamic overdue status
-    const enriched = profiles
-      .filter((p) => {
-        if (!search) return true;
-        const name = `${p.student.firstName} ${p.student.lastName}`.toLowerCase();
-        return (
-          name.includes(search.toLowerCase()) ||
-          p.student.srNumber.toLowerCase().includes(search.toLowerCase())
-        );
-      })
-      .map((profile) => {
-        const paidMonths = new Set(profile.payments.map((p) => p.monthCovered));
-        const currentMonthPaid = paidMonths.has(currentMonthLabel);
-        const { isOverdue, fineAmount } = computeLateFineForMonth(
-          currentMonthLabel,
-          profile.lateFeeRatePerMonth,
-          currentMonthPaid
-        );
-        const totalCollected = profile.payments.reduce((s, p) => s + p.totalPaid, 0);
+    const enriched = await Promise.all(
+      profiles
+        .filter((p) => {
+          if (!search) return true;
+          const name = `${p.student.firstName} ${p.student.lastName}`.toLowerCase();
+          return (
+            name.includes(search.toLowerCase()) ||
+            p.student.srNumber.toLowerCase().includes(search.toLowerCase())
+          );
+        })
+        .map(async (profile) => {
+          const paidMonths = new Set(profile.payments.map((p) => p.monthCovered));
+          const currentMonthPaid = paidMonths.has(currentMonthLabel);
+          const { isOverdue, fineAmount } = await computeLateFineForMonth(
+            currentMonthLabel,
+            profile.lateFeeRatePerMonth,
+            currentMonthPaid
+          );
+          const totalCollected = profile.payments.reduce((s, p) => s + p.totalPaid, 0);
 
-        return {
-          ...profile,
-          currentMonthPaid,
-          isOverdueNow: isOverdue,
-          suggestedLateFine: isOverdue ? fineAmount : 0,
-          totalCollected,
-          paidMonths: Array.from(paidMonths),
-        };
-      });
+          return {
+            ...profile,
+            currentMonthPaid,
+            isOverdueNow: isOverdue,
+            suggestedLateFine: isOverdue ? fineAmount : 0,
+            totalCollected,
+            paidMonths: Array.from(paidMonths),
+          };
+        })
+    );
 
     // Aggregate stats
     const totalStudentsWithFees = enriched.length;

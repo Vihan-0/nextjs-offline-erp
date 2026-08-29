@@ -30,6 +30,7 @@ import {
   FileSpreadsheet,
   Copy,
   AlertCircle,
+  IndianRupee,
 } from "lucide-react";
 
 interface PageProps {
@@ -466,6 +467,34 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 flex items-center justify-center gap-1.5 transition-colors"
               >
                 <span>Open Marks Register</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* 7. Fees, Concessions & Dues Hub Card */}
+            <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex flex-col justify-between space-y-3 hover:border-zinc-700 transition-all">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="w-8 h-8 rounded-lg bg-emerald-950/60 text-emerald-400 flex items-center justify-center font-bold border border-emerald-800/60">
+                    <IndianRupee className="w-4 h-4" />
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-800/40">
+                    Monthly Billing
+                  </span>
+                </div>
+                <h3 className="font-bold text-sm text-zinc-100">
+                  Fees, Concessions &amp; Dues
+                </h3>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Manage monthly fee profile, sibling/need concessions, collect multiple installments, and generate receipts.
+                </p>
+              </div>
+
+              <Link
+                href="/fees"
+                className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-200 border border-emerald-800/60 flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <span>Open Fees &amp; Dues</span>
                 <ChevronRight className="w-3.5 h-3.5" />
               </Link>
             </div>
