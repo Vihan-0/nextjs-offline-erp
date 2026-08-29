@@ -44,11 +44,16 @@ model Student {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
+  // General Administrative / Behavioral Remark
+  generalRemark           String?
+
   // Relations
   parents                 Parent[]
   academicSessions        AcademicSession[]
   printAudits             PrintAudit[]
   auditLogs               AuditLog[]
+  tcRecords               TransferCertificateRecord[]
+  feeProfile              StudentFeeProfile?
 }
 
 model Parent {
@@ -172,3 +177,100 @@ model AuditLog {
   student         Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
 }
 
+// ========================================================
+// TC FOLDER / PASSED STUDENTS ARCHIVE
+// ========================================================
+
+model TransferCertificateRecord {
+  id                     String   @id @default(uuid())
+  studentSrNumber        String
+  student                Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+
+  tcNumber               String   @unique // e.g. "TC/2026/001"
+  studentName            String
+  fatherName             String
+  motherName             String?
+  admissionClass         String?
+  leavingClass           String
+  admissionDate          DateTime?
+  leavingDate            DateTime
+  yearsStudied           String   // e.g. "2021 - 2026 (5 Years)"
+
+  issueDate              DateTime @default(now())
+  issuedBy               String   @default("Principal")
+  reasonForLeaving       String?
+  conduct                String   @default("Good")
+
+  // Receiver / Acknowledgement Details
+  receivedByName         String?
+  receivedByRelation     String?  // "Father", "Mother", "Guardian", "Self"
+  receivedDate           DateTime?
+  receiptSignatureStatus String   @default("PENDING_COLLECTION") // "SIGNED", "PENDING_COLLECTION"
+
+  status                 String   @default("ISSUED") // "ISSUED", "CANCELLED"
+  remarks                String?
+  traceCode              String   @unique
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+// ========================================================
+// MONTHLY FEES MANAGEMENT SYSTEM
+// ========================================================
+
+model StudentFeeProfile {
+  id                     String   @id @default(uuid())
+  studentSrNumber        String   @unique
+  student                Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+
+  sessionYear            String   @default("2026-2027")
+  className              String
+  baseMonthlyFee         Float    // Monthly fee amount (e.g. 2000)
+
+  // Concession Settings
+  hasConcession          Boolean  @default(false)
+  concessionType         String?  // "SIBLING", "SINGLE_PARENT", "NEED_BASED", "STAFF_WARD", "MERIT"
+  concessionPercentage   Float?   // e.g. 25 (percent)
+  concessionAmount       Float?   // Flat rupee concession, if applicable
+  concessionReason       String?
+
+  netMonthlyFee          Float    // Effective fee after concession
+  lateFeeRatePerMonth    Float    @default(100) // ₹100 per overdue month
+
+  feeRemarks             String?  // Dedicated fee remarks / billing commitments
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  payments               FeePayment[]
+}
+
+model FeePayment {
+  id                     String   @id @default(uuid())
+  receiptNumber          String   @unique  // e.g. "REC-2026-0001"
+  studentSrNumber        String
+  feeProfileId           String
+  feeProfile             StudentFeeProfile @relation(fields: [feeProfileId], references: [id], onDelete: Cascade)
+
+  sessionYear            String   @default("2026-2027")
+  className              String
+  monthCovered           String   // e.g. "April 2026"
+  installmentNumber      Int      @default(1) // 1, 2, 3… for multiple payments in same month
+
+  installmentPaid        Float    // Amount paid in this installment
+  lateFeeFine            Float    @default(0) // ₹100 if overdue; calculated dynamically at query time
+  totalPaid              Float    // installmentPaid + lateFeeFine
+
+  modeOfPayment          String   @default("CASH") // "CASH", "UPI", "CHEQUE", "BANK_TRANSFER"
+  transactionReference   String?  // Cheque No / UPI UTR
+  paymentReceivedBy      String   // Cashier / Staff name
+  paymentDate            DateTime @default(now())
+  dueDate                DateTime // Expected due date for the month; used for overdue calculation
+
+  status                 String   @default("PAID") // "PAID", "PENDING_CLEARANCE", "BOUNCED"
+  remarks                String?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}

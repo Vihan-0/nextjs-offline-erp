@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { getEnclosureUrl } from "@/lib/enclosures";
 import { EditStudentProfileButton } from "@/components/students/EditStudentProfileButton";
 import { StudentEditData } from "@/components/students/EditStudentModal";
+import { GeneralRemarkSection } from "@/components/students/GeneralRemarkSection";
 import {
   CreditCard,
   ArrowLeft,
@@ -581,6 +582,12 @@ export default async function StudentProfilePage({ params }: PageProps) {
             </div>
           </div>
         </div>
+
+        {/* General Administrative Remark Section */}
+        <GeneralRemarkSection
+          srNumber={student.srNumber}
+          initialRemark={student.generalRemark}
+        />
 
         {/* Enterprise Universal Audit Ledger Section */}
         <div className="bg-zinc-900/90 rounded-3xl border border-zinc-800 p-6 shadow-md space-y-4">
