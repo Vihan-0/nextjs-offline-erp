@@ -1,6 +1,49 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# ==============================================================================
+# Comprehensive Security .gitignore - Offline School ERP System
+# NEVER track sensitive school data, database files, uploaded documents, or keys
+# ==============================================================================
 
-# dependencies
+# Environment Variables & Secrets (CRITICAL)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+!.env.example
+
+# Local SQLite & Prisma Database Files (CRITICAL - Contains Student & Staff Data)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.bak
+*.sqlite
+*.sqlite3
+dev.db
+dev.db-journal
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
+prisma/*.bak
+prisma/*.sqlite
+prisma/*.sqlite3
+prisma/dev.db
+prisma/dev.db-journal
+
+# Private Offline Enclosures & Sensitive Documents (Photos, PAN cards, Aadhaar, Lockout state)
+storage/
+storage/**
+/storage/
+storage/enclosures/
+storage/lockout.json
+public/uploads/
+public/uploads/**
+/public/uploads/
+
+# Node Dependencies
+node_modules/
 /node_modules
 /.pnp
 .pnp.*
@@ -10,32 +53,59 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
-
-# next.js
+# Next.js Build Artifacts & Caches
+.next/
 /.next/
+out/
 /out/
+build/
+/build/
+dist/
+/dist/
 
-# production
-/build
+# Generated Prisma Client (regenerate with 'npx prisma generate')
+/src/generated/prisma/
+src/generated/prisma/
 
-# misc
-.DS_Store
-*.pem
+# TypeScript & Build Caches
+*.tsbuildinfo
+next-env.d.ts
+tsconfig.tsbuildinfo
 
-# debug
+# Scratch & Temporary Folders
+scratch/
+/scratch/
+.system_generated/
+*.tmp
+*.temp
+
+# Vercel & Deployment
+.vercel
+
+# Testing & Coverage
+coverage/
+/coverage/
+
+# Logs & Debugging
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 .pnpm-debug.log*
+*.log
 
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# OS & Editor Specific Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.pem
+*.key
+*.cert
+.vscode/
+.idea/
+.claude/
+.windsurf/

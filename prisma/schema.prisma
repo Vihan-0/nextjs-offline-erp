@@ -1,0 +1,174 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Student {
+  id                      String   @id @default(uuid())
+  srNumber                String   @unique // Scholar Register Number (Primary Key reference)
+  
+  // Demographics
+  firstName               String
+  lastName                String
+  dateOfBirth             DateTime
+  gender                  String
+  bloodGroup              String?
+  distanceFromSchool      Float?   // in km
+  religion                String?
+  category                String?  // General, SC, ST, OBC
+  nationality             String?  @default("Indian")
+  
+  // Enterprise & Secure Identifiers
+  apaarId                 String?  // Encrypted APAAR ID
+  recordStatus            String   @default("PENDING") // PENDING, VERIFIED, ARCHIVED, etc.
+  
+  // Enclosures (Local File Paths for Offline Use)
+  photoPath               String?
+  birthCertificatePath    String?
+  aadharCardPath          String?
+  transferCertificatePath String?
+  parentPanCardPath       String?
+  
+  // Medical
+  medicalConditions       String?
+  allergies               String?
+
+  // Timestamps
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  // Relations
+  parents                 Parent[]
+  academicSessions        AcademicSession[]
+  printAudits             PrintAudit[]
+  auditLogs               AuditLog[]
+}
+
+model Parent {
+  id                     String   @id @default(uuid())
+  studentSrNumber        String
+  student                Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+  
+  relationType           String   // "Father", "Mother", "Guardian"
+  firstName              String
+  lastName               String
+  educationQualification String?
+  occupation             String?
+  annualIncome           Float?
+  phoneNumber            String?
+  email                  String?
+  address                String?
+  
+  // Enterprise additions
+  panNumber              String?  // Encrypted PAN Number
+  panCardPath            String?  // Photo / PDF of PAN Card
+  fatherPhotoPath        String?
+  motherPhotoPath        String?
+  parentPhotoPath        String?
+  
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model AcademicSession {
+  id                     String   @id @default(uuid())
+  studentSrNumber        String
+  student                Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+  
+  sessionYear            String   // e.g., "2023-2024"
+  className              String   // Pre-Primary, Class I, Class IX, etc.
+  section                String?
+  rollNumber             String?
+  
+  // Attendance tracking (Aggregated for Half-Yearly/Annual and 10-year track)
+  halfYearlyAttendance   Int?
+  halfYearlyTotalDays    Int?
+  annualAttendance       Int?
+  annualTotalDays        Int?
+  
+  // Accumulative Registers: Single-meeting attendance tracking
+  totalMeetingsPresent   Int?
+  totalMeetings          Int?
+  
+  // Status
+  resultStatus           String?  // Promoted, Detained, etc.
+  rank                   Int?     // Auto-assigned by scoring engine if criteria met
+  
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  // Relations
+  marks                  Mark[]
+  softSkills             SoftSkill[]
+}
+
+// Handles accumulative standard marks (Oral/Written, Unit Tests, Half-Yearly, Annual)
+model Mark {
+  id                     String   @id @default(uuid())
+  academicSessionId      String
+  academicSession        AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
+  
+  subjectName            String
+  examType               String   // Unit Test 1, Half-Yearly, Annual, etc.
+  
+  // Breakdown of marks
+  oralMarksObtained      Float?
+  oralMaxMarks           Float?
+  writtenMarksObtained   Float?
+  writtenMaxMarks        Float?
+  
+  // Used if subject doesn't separate oral/written
+  totalMarksObtained     Float?
+  totalMaxMarks          Float?
+  
+  // Grade calculated dynamically by the scoring engine later, but cached here
+  grade                  String?  
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+// Handles 5-Tier Report Card special fields (Motor skills, hygiene, etc.)
+model SoftSkill {
+  id                     String   @id @default(uuid())
+  academicSessionId      String
+  academicSession        AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
+  
+  skillName              String   // e.g., "Motor Skills", "Hygiene Rating", "Discipline"
+  term                   String   // Half-Yearly, Annual
+  grade                  String   // e.g., A, B, C, A+
+  remarks                String?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+// Model to track printing activities for enterprise audit compliance
+model PrintAudit {
+  id              String   @id @default(uuid())
+  documentType    String   // e.g., 'REPORT_CARD', 'TC'
+  studentSrNumber String
+  student         Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+  printId         String   @unique
+  printedAt       DateTime @default(now())
+}
+
+// Enterprise Universal Audit Ledger
+model AuditLog {
+  id              String   @id @default(uuid())
+  actionType      String   // e.g., "PRINT_TC", "PRINT_REPORT_CARD", "EDIT_MARK", "EDIT_DEMOGRAPHICS"
+  studentSrNumber String
+  traceCode       String   @unique // A unique 8-character hex string (e.g., 'TC-8F92A1B3' or 'EDT-4C29F01A')
+  details         String?  // JSON stringified details of what changed or what was printed
+  timestamp       DateTime @default(now())
+  
+  student         Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+}
+
