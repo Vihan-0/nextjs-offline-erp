@@ -123,8 +123,12 @@ export async function issueTransferCertificate(payload: IssueTCPayload) {
       },
     });
 
-    revalidatePath(`/students/${srUpper}`);
-    revalidatePath("/tc-register");
+    try {
+      revalidatePath(`/students/${srUpper}`);
+      revalidatePath("/tc-register");
+    } catch {
+      // Safe outside Next.js request context
+    }
 
     return { success: true, tcRecord };
   } catch (error) {
@@ -163,7 +167,11 @@ export async function updateTCReceiverDetails(payload: UpdateTCReceiverPayload) 
       },
     });
 
-    revalidatePath("/tc-register");
+    try {
+      revalidatePath("/tc-register");
+    } catch {
+      // Safe outside Next.js request context
+    }
 
     return { success: true, tcRecord: updated };
   } catch (error) {
@@ -238,7 +246,11 @@ export async function updateStudentGeneralRemark(srNumber: string, remark: strin
       details: { field: "generalRemark", updated: true },
     });
 
-    revalidatePath(`/students/${srUpper}`);
+    try {
+      revalidatePath(`/students/${srUpper}`);
+    } catch {
+      // Safe outside Next.js request context
+    }
 
     return { success: true };
   } catch (error) {

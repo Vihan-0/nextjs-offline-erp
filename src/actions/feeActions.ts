@@ -180,8 +180,12 @@ export async function upsertStudentFeeProfile(payload: UpsertFeeProfilePayload) 
       },
     });
 
-    revalidatePath(`/students/${srUpper}`);
-    revalidatePath("/fees");
+    try {
+      revalidatePath(`/students/${srUpper}`);
+      revalidatePath("/fees");
+    } catch {
+      // Safe outside Next.js request context
+    }
 
     return { success: true, profile };
   } catch (error) {
@@ -269,8 +273,12 @@ export async function recordFeePayment(payload: RecordFeePaymentPayload) {
       },
     });
 
-    revalidatePath(`/students/${srUpper}`);
-    revalidatePath("/fees");
+    try {
+      revalidatePath(`/students/${srUpper}`);
+      revalidatePath("/fees");
+    } catch {
+      // Safe outside Next.js request context
+    }
 
     return { success: true, payment };
   } catch (error) {

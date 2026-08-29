@@ -105,8 +105,12 @@ export async function recordAuditLogAction(params: RecordAuditParams) {
       },
     });
 
-    revalidatePath(`/students/${encodeURIComponent(cleanSrNumber)}`);
-    revalidatePath("/director-dashboard");
+    try {
+      revalidatePath(`/students/${encodeURIComponent(cleanSrNumber)}`);
+      revalidatePath("/director-dashboard");
+    } catch {
+      // Safe outside Next.js request context (e.g. CLI or test environment)
+    }
 
     return {
       success: true,
