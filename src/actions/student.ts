@@ -76,6 +76,7 @@ export async function createStudentAction(formData: FormData) {
       permanentAddress: formData.get("permanentAddress") || undefined,
       parentPan: formData.get("parentPan") || undefined,
       aadharNumber: formData.get("aadharNumber") || undefined,
+      apaarId: formData.get("apaarId") || undefined,
       motherIncome: formData.get("motherIncome") || undefined,
       admissionClass: formData.get("admissionClass") || undefined,
       className: formData.get("className") || "Nursery - PP3",
@@ -436,10 +437,15 @@ export async function updateStudentAction(formData: FormData) {
         saveFile(formData.get("parentPanCard")),
       ]);
 
-      // Encrypt Aadhaar if provided
+      // Encrypt Aadhaar and APAAR if provided
       const encryptedAadhar = aadharNumberRaw
         ? encryptData(aadharNumberRaw.replace(/\s/g, ""))
         : existingStudent.aadharNumber;
+        
+      const apaarIdRaw = formData.get("apaarId")?.toString().trim();
+      const encryptedApaar = apaarIdRaw
+        ? encryptData(apaarIdRaw.replace(/\s/g, ""))
+        : existingStudent.apaarId;
 
       await prisma.$transaction(async (tx) => {
         await tx.student.update({
@@ -450,6 +456,7 @@ export async function updateStudentAction(formData: FormData) {
             medicalConditions, allergies,
             currentAddress, permanentAddress,
             aadharNumber: encryptedAadhar,
+            apaarId: encryptedApaar,
             motherIncome,
             recordStatus: "APPROVED",
             photoPath: newPhoto || existingStudent.photoPath,

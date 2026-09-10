@@ -61,6 +61,10 @@ export const admissionSchema = z.object({
     "Aadhaar number must be exactly 12 digits"
   ),
   motherIncome: z.string().optional(),
+  apaarId: z.string().optional().refine(
+    (val) => !val || val.replace(/\s/g, "").length === 12,
+    "APAAR/PEN ID must be exactly 12 digits"
+  ),
   admissionClass: z.string().optional(),
 });
 

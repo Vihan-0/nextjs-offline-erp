@@ -159,7 +159,6 @@ export function BlankAdmissionForm() {
             </div>
           </div>
 
-          {/* Mother Details */}
           <div className="grid grid-cols-4 gap-2 pt-1 border-t border-stone-200">
             <div className="col-span-2">
               <span className="font-bold">Mother's Full Name:</span> ___________________________________________
@@ -172,25 +171,36 @@ export function BlankAdmissionForm() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <div>
-              <span className="font-bold">Mother's Mobile No.:</span> ______________________
+              <span className="font-bold">Mother's Mobile:</span> ___________________
             </div>
             <div>
-              <span className="font-bold">Mother's Email:</span> ______________________
+              <span className="font-bold">Annual Income (₹):</span> ___________________
             </div>
             <div>
-              <span className="font-bold">Mother's PAN:</span> ______________________
+              <span className="font-bold">Mother's Email:</span> ___________________
+            </div>
+            <div>
+              <span className="font-bold">Mother's PAN:</span> ___________________
             </div>
           </div>
 
           {/* Address Details */}
           <div className="pt-1 border-t border-stone-200 space-y-1">
-            <div>
-              <span className="font-bold">Residential / Present Address:</span>{" "}
-              <span className="border-b border-dotted border-stone-900 inline-block w-[78%]"></span>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <span className="font-bold">Current Address:</span><br />
+                <span className="border-b border-dotted border-stone-900 inline-block w-full h-4 mt-1"></span>
+                <span className="border-b border-dotted border-stone-900 inline-block w-full h-4 mt-1"></span>
+              </div>
+              <div>
+                <span className="font-bold">Permanent Address:</span><br />
+                <span className="border-b border-dotted border-stone-900 inline-block w-full h-4 mt-1"></span>
+                <span className="border-b border-dotted border-stone-900 inline-block w-full h-4 mt-1"></span>
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2 pt-1">
               <div className="col-span-2">
                 <span className="font-bold">City / District:</span> Lucknow, Uttar Pradesh
               </div>

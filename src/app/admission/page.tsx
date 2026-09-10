@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, ChangeEvent } from "react";
+import React, { useState, useRef, ChangeEvent, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -99,6 +99,8 @@ export default function AdmissionPage() {
     handleSubmit,
     formState: { errors },
     reset,
+    watch,
+    setValue,
   } = useForm<AdmissionFormValues>({
     resolver: zodResolver(admissionSchema),
     defaultValues: {
@@ -108,6 +110,16 @@ export default function AdmissionPage() {
       sessionYear: "2026-2027",
     },
   });
+
+  const [isSameAddress, setIsSameAddress] = useState(false);
+  const currentAddressVal = watch("currentAddress");
+
+  useEffect(() => {
+    if (isSameAddress) {
+      setValue("permanentAddress", currentAddressVal || "");
+      setValue("address", currentAddressVal || ""); // Satisfy required field
+    }
+  }, [isSameAddress, currentAddressVal, setValue]);
 
   const handleFileSelect = (
     key: "photo" | "fatherPhoto" | "motherPhoto" | "parentPanCard" | "birthCertificate" | "aadharCard" | "transferCertificate",
@@ -585,6 +597,36 @@ export default function AdmissionPage() {
                 />
               </div>
 
+              {/* Aadhaar Number */}
+              <div>
+                <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
+                  Aadhaar Number (12-digit)
+                </label>
+                <input
+                  {...register("aadharNumber")}
+                  className="w-full rounded-lg border px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
+                  placeholder="XXXX XXXX XXXX"
+                  maxLength={14}
+                />
+                {errors.aadharNumber && <p className="text-red-500 text-xs mt-1">{errors.aadharNumber.message}</p>}
+              </div>
+
+              {/* APAAR / PEN ID */}
+              <div>
+                <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
+                  APAAR / PEN ID
+                </label>
+                <input
+                  {...register("apaarId")}
+                  className="w-full rounded-lg border px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
+                  placeholder="12-digit APAAR/PEN"
+                  maxLength={12}
+                />
+                {errors.apaarId && <p className="text-red-500 text-xs mt-1">{errors.apaarId.message}</p>}
+              </div>
+
               {/* Nationality */}
               <div>
                 <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
@@ -744,31 +786,74 @@ export default function AdmissionPage() {
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: "#475569" }}>
-                    Phone Number
-                  </label>
-                  <input
-                    {...register("motherPhone")}
-                    className="w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: "#475569" }}>
+                      Phone Number
+                    </label>
+                    <input
+                      {...register("motherPhone")}
+                      className="w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: "#475569" }}>
+                      Annual Income (₹)
+                    </label>
+                    <input
+                      type="number"
+                      {...register("motherIncome")}
+                      className="w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Residential Address */}
-              <div className="md:col-span-2">
-                <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
-                  Permanent Residential Address <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  {...register("address")}
-                  rows={2}
-                  className="w-full rounded-lg border px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
-                  placeholder="Full address with city, district and pin code..."
-                />
-                {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address.message}</p>}
+              <div className="md:col-span-2 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
+                    Current Residential Address
+                  </label>
+                  <textarea
+                    {...register("currentAddress")}
+                    rows={2}
+                    className="w-full rounded-lg border px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
+                    placeholder="Full current address with city, district and pin code..."
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="sameAddress"
+                    checked={isSameAddress}
+                    onChange={(e) => setIsSameAddress(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <label htmlFor="sameAddress" className="text-xs font-semibold" style={{ color: "#475569" }}>
+                    Permanent Address is same as Current Address
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
+                    Permanent Residential Address <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    {...register("address")}
+                    disabled={isSameAddress}
+                    rows={2}
+                    className={`w-full rounded-lg border px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500 ${isSameAddress ? 'bg-gray-100 opacity-60' : 'bg-white'}`}
+                    style={{ borderColor: "#cbd5e1", color: "#0f172a" }}
+                    placeholder="Full permanent address with city, district and pin code..."
+                  />
+                  <input type="hidden" {...register("permanentAddress")} value={watch("address")} />
+                  {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address.message}</p>}
+                </div>
               </div>
 
               {/* Single Parent / Guardian PAN Number */}

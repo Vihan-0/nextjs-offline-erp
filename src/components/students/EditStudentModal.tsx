@@ -46,7 +46,12 @@ export interface StudentEditData {
   motherPhone?: string | null;
   motherOccupation?: string | null;
   motherEducation?: string | null;
+  motherIncome?: number | null;
   address?: string | null;
+  currentAddress?: string | null;
+  permanentAddress?: string | null;
+  aadharNumber?: string | null;
+  apaarId?: string | null;
   photoPath?: string | null;
 }
 
@@ -98,8 +103,24 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
   const [motherPhone, setMotherPhone] = useState(student.motherPhone || "");
   const [motherOccupation, setMotherOccupation] = useState(student.motherOccupation || "");
   const [motherEducation, setMotherEducation] = useState(student.motherEducation || "");
+  const [motherIncome, setMotherIncome] = useState(
+    student.motherIncome ? String(student.motherIncome) : ""
+  );
 
   const [address, setAddress] = useState(student.address || "");
+  const [currentAddress, setCurrentAddress] = useState(student.currentAddress || "");
+  const [permanentAddress, setPermanentAddress] = useState(student.permanentAddress || "");
+  const [isSameAddress, setIsSameAddress] = useState(false);
+  const [aadharNumber, setAadharNumber] = useState(student.aadharNumber || "");
+  const [apaarId, setApaarId] = useState(student.apaarId || "");
+
+  // Sync addresses if checked
+  React.useEffect(() => {
+    if (isSameAddress) {
+      setPermanentAddress(currentAddress);
+      setAddress(currentAddress);
+    }
+  }, [isSameAddress, currentAddress]);
 
   // Files
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -145,8 +166,13 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
       formData.append("motherPhone", motherPhone);
       formData.append("motherOccupation", motherOccupation);
       formData.append("motherEducation", motherEducation);
+      if (motherIncome) formData.append("motherIncome", motherIncome);
 
       formData.append("address", address);
+      formData.append("currentAddress", currentAddress);
+      formData.append("permanentAddress", permanentAddress);
+      formData.append("aadharNumber", aadharNumber);
+      formData.append("apaarId", apaarId);
 
       if (photoFile) formData.append("photo", photoFile);
       if (birthCertFile) formData.append("birthCertificate", birthCertFile);
@@ -403,6 +429,35 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">
+                    Aadhaar Number
+                  </label>
+                  <input
+                    type="text"
+                    value={aadharNumber}
+                    onChange={(e) => setAadharNumber(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    placeholder="XXXX XXXX XXXX"
+                    maxLength={14}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">
+                    APAAR / PEN ID
+                  </label>
+                  <input
+                    type="text"
+                    value={apaarId}
+                    onChange={(e) => setApaarId(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    placeholder="12-digit APAAR/PEN"
+                    maxLength={12}
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -516,18 +571,58 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
                       placeholder="e.g. Post Graduate"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-300 mb-1">Annual Income (₹)</label>
+                    <input
+                      type="number"
+                      value={motherIncome}
+                      onChange={(e) => setMotherIncome(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                      placeholder="e.g. 500000"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-zinc-300 mb-1">Residential Address</label>
-                <textarea
-                  rows={2}
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 uppercase focus:ring-1 focus:ring-amber-500 focus:outline-none"
-                  placeholder="e.g. 12/45 CHOWK, LUCKNOW"
-                />
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">Current Residential Address</label>
+                  <textarea
+                    rows={2}
+                    value={currentAddress}
+                    onChange={(e) => setCurrentAddress(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 uppercase focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    placeholder="e.g. 12/45 CHOWK, LUCKNOW"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="sameAddressEdit"
+                    checked={isSameAddress}
+                    onChange={(e) => setIsSameAddress(e.target.checked)}
+                    className="rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-amber-500"
+                  />
+                  <label htmlFor="sameAddressEdit" className="text-xs font-semibold text-zinc-400">
+                    Permanent Address is same as Current Address
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">Permanent Residential Address</label>
+                  <textarea
+                    rows={2}
+                    value={isSameAddress ? currentAddress : permanentAddress}
+                    onChange={(e) => {
+                      setPermanentAddress(e.target.value);
+                      setAddress(e.target.value);
+                    }}
+                    disabled={isSameAddress}
+                    className={`w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 uppercase focus:ring-1 focus:ring-amber-500 focus:outline-none ${isSameAddress ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    placeholder="e.g. 12/45 CHOWK, LUCKNOW"
+                  />
+                </div>
               </div>
             </div>
           )}
