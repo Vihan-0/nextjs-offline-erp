@@ -26,8 +26,18 @@ model Student {
   nationality             String?  @default("Indian")
   
   // Enterprise & Secure Identifiers
-  apaarId                 String?  // Encrypted APAAR ID
+  apaarId                 String?  // 12-digit APAAR / PEN ID
+  aadharNumber            String?  // 12-digit Aadhaar number (encrypted at rest)
   recordStatus            String   @default("PENDING") // PENDING, VERIFIED, ARCHIVED, etc.
+  
+  // Income & Address
+  motherIncome            Float?   // Mother's annual income
+  currentAddress          String?  // Current / present residential address
+  permanentAddress        String?  // Permanent residential address
+  
+  // Class Tracking (Admission vs. Current)
+  admissionClass          String?  // Original class at time of admission (frozen)
+  currentClass            String?  // Dynamically computed active class
   
   // Enclosures (Local File Paths for Offline Use)
   photoPath               String?
@@ -54,6 +64,7 @@ model Student {
   auditLogs               AuditLog[]
   tcRecords               TransferCertificateRecord[]
   feeProfile              StudentFeeProfile?
+  editRequests            StudentEditRequest[]
 }
 
 model Parent {
@@ -273,4 +284,25 @@ model FeePayment {
 
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+}
+
+// ========================================================
+// DIRECTOR APPROVAL PIPELINE — EDIT REQUEST STAGING
+// ========================================================
+
+model StudentEditRequest {
+  id              String    @id @default(uuid())
+  studentSrNumber String
+  student         Student   @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+
+  proposedData    String    // JSON string of { fieldName: newValue } for text edits
+  attachedFiles   String?   // JSON string of temp file paths [{ fieldName, tempPath }]
+  status          String    @default("PENDING") // "PENDING", "APPROVED", "REJECTED"
+  rejectionReason String?
+
+  submittedBy     String?   // Staff / user identifier
+  reviewedAt      DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }

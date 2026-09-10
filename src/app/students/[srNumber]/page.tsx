@@ -33,6 +33,8 @@ import {
   IndianRupee,
 } from "lucide-react";
 
+import { getReportCardRouteForClass, type ReportCardRouteInfo } from "@/lib/classHierarchy";
+
 interface PageProps {
   params: Promise<{
     srNumber: string;
@@ -47,40 +49,6 @@ function formatDate(d: Date | string | null | undefined): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
   return `${day}.${month}.${year}`;
-}
-
-function getActiveReportCardRoute(className: string) {
-  const norm = (className || "").toUpperCase().trim();
-  if (norm.includes("NURSERY") || norm.includes("LKG") || norm.includes("UKG") || norm.includes("PRE")) {
-    return {
-      route: "pre-primary",
-      label: "Pre-Primary Foundation Card",
-      badge: "Early Childhood (4-Term)",
-      color: "bg-rose-950/60 text-rose-300 border-rose-800/60 hover:bg-rose-900/60",
-    };
-  }
-  if (norm.includes("VI") || norm.includes("VII") || norm.includes("VIII") || norm.includes("CLASS 6") || norm.includes("CLASS 7") || norm.includes("CLASS 8")) {
-    return {
-      route: "mid-levels",
-      label: "Junior Wing Progress Card (VI–VIII)",
-      badge: "Junior Section",
-      color: "bg-amber-950/60 text-amber-300 border-amber-800/60 hover:bg-amber-900/60",
-    };
-  }
-  if (norm.includes("IX") || norm.includes("X") || norm.includes("CLASS 9") || norm.includes("CLASS 10")) {
-    return {
-      route: "class-ix",
-      label: "Secondary Progress Card (IX–X)",
-      badge: "Secondary Board Standard",
-      color: "bg-indigo-950/60 text-indigo-300 border-indigo-800/60 hover:bg-indigo-900/60",
-    };
-  }
-  return {
-    route: "lower-primary",
-    label: "Lower Primary Holistic Card (I–V)",
-    badge: "Primary Wing",
-    color: "bg-blue-950/60 text-blue-300 border-blue-800/60 hover:bg-blue-900/60",
-  };
 }
 
 export default async function StudentProfilePage({ params }: PageProps) {
@@ -146,7 +114,7 @@ export default async function StudentProfilePage({ params }: PageProps) {
   const sessionYear = latestSession?.sessionYear || "2026-2027";
   const fullName = `${student.firstName} ${student.lastName}`.trim();
 
-  const activeCardInfo = getActiveReportCardRoute(className);
+  const activeCardInfo = getReportCardRouteForClass(className);
 
   // Attendance calculation (truthful from database)
   const annualPresent = latestSession?.annualAttendance ?? latestSession?.totalMeetingsPresent ?? null;

@@ -51,7 +51,17 @@ export const admissionSchema = z.object({
 
   // Address & Parent Government Credentials
   address: z.string().min(1, "Residential address is required"),
+  currentAddress: z.string().optional(),
+  permanentAddress: z.string().optional(),
   parentPan: z.string().optional(),
+
+  // Extended Identifiers
+  aadharNumber: z.string().optional().refine(
+    (val) => !val || val.replace(/\s/g, "").length === 12,
+    "Aadhaar number must be exactly 12 digits"
+  ),
+  motherIncome: z.string().optional(),
+  admissionClass: z.string().optional(),
 });
 
 export type AdmissionFormValues = z.infer<typeof admissionSchema>;

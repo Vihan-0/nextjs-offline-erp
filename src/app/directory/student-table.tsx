@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { deleteStudentAction } from "@/actions/student";
 import { getEnclosureUrl } from "@/lib/enclosures";
+import { getReportCardPathForClass } from "@/lib/classHierarchy";
 import { EditStudentModal, StudentEditData } from "@/components/students/EditStudentModal";
 
 export type StudentDirectoryItem = {
@@ -37,20 +38,6 @@ export type StudentDirectoryItem = {
 
 interface StudentTableProps {
   students: StudentDirectoryItem[];
-}
-
-function getReportCardPath(className: string) {
-  const norm = (className || "").toUpperCase().trim();
-  if (norm.includes("NURSERY") || norm.includes("LKG") || norm.includes("UKG") || norm.includes("PRE")) {
-    return { path: "pre-primary", label: "Pre-Prim", color: "text-rose-300 bg-rose-950/60 border-rose-800/60 hover:bg-rose-900/60" };
-  }
-  if (norm.includes("VI") || norm.includes("VII") || norm.includes("VIII") || norm.includes("CLASS 6") || norm.includes("CLASS 7") || norm.includes("CLASS 8")) {
-    return { path: "mid-levels", label: "Junior Card", color: "text-amber-300 bg-amber-950/60 border-amber-800/60 hover:bg-amber-900/60" };
-  }
-  if (norm.includes("IX") || norm.includes("X") || norm.includes("CLASS 9") || norm.includes("CLASS 10")) {
-    return { path: "class-ix", label: "Class IX Card", color: "text-indigo-300 bg-indigo-950/60 border-indigo-800/60 hover:bg-indigo-900/60" };
-  }
-  return { path: "lower-primary", label: "Primary Card", color: "text-blue-300 bg-blue-950/60 border-blue-800/60 hover:bg-blue-900/60" };
 }
 
 export function StudentTable({ students }: StudentTableProps) {
@@ -197,7 +184,7 @@ export function StudentTable({ students }: StudentTableProps) {
                 </tr>
               ) : (
                 filteredStudents.map((student) => {
-                  const reportCard = getReportCardPath(student.currentClass);
+                  const reportCard = getReportCardPathForClass(student.currentClass);
 
                   return (
                     <tr key={student.id} className="hover:bg-zinc-800/40 transition-colors group">
