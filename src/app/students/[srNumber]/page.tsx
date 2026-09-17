@@ -6,6 +6,7 @@ import { getEnclosureUrl } from "@/lib/enclosures";
 import { EditStudentProfileButton } from "@/components/students/EditStudentProfileButton";
 import { StudentEditData } from "@/components/students/EditStudentModal";
 import { GeneralRemarkSection } from "@/components/students/GeneralRemarkSection";
+import { AddHistoricalSessionButton } from "@/components/students/AddHistoricalSessionButton";
 import {
   CreditCard,
   ArrowLeft,
@@ -140,6 +141,11 @@ export default async function StudentProfilePage({ params }: PageProps) {
     allergies: student.allergies,
     className,
     sessionYear,
+    aadharNumber: student.aadharNumber,
+    apaarId: student.apaarId,
+    motherIncome: student.motherIncome,
+    currentAddress: student.currentAddress,
+    permanentAddress: student.permanentAddress,
     fatherName: father ? `${father.firstName} ${father.lastName}`.trim() : "",
     fatherPhone: father?.phoneNumber,
     fatherOccupation: father?.occupation,
@@ -290,13 +296,42 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 </p>
               </div>
 
-              <Link
-                href={`/students/${encodeURIComponent(student.srNumber)}/report-cards/${activeCardInfo.route}`}
-                className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-blue-950/60 hover:bg-blue-900/60 text-blue-200 border border-blue-800/60 flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <span>Open Report Card</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
+              {student.academicSessions.length === 1 ? (
+                <Link
+                  href={`/students/${encodeURIComponent(student.srNumber)}/report-cards/${activeCardInfo.route}`}
+                  className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-blue-950/60 hover:bg-blue-900/60 text-blue-200 border border-blue-800/60 flex items-center justify-center gap-1.5 transition-colors mt-auto"
+                >
+                  <span>Open Report Card</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              ) : (
+                <div className="space-y-2 mt-4">
+                  <h4 className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Available Sessions</h4>
+                  <div className="flex flex-col gap-2 max-h-32 overflow-y-auto pr-1">
+                    {student.academicSessions.map((sess, idx) => {
+                      const sessInfo = getReportCardRouteForClass(sess.className);
+                      const isLatest = idx === 0;
+                      return (
+                        <Link
+                          key={sess.id}
+                          href={`/students/${encodeURIComponent(student.srNumber)}/report-cards/${sessInfo.route}?session=${sess.sessionYear}`}
+                          className={`w-full py-2 px-3 rounded-lg text-[11px] font-bold flex items-center justify-between transition-colors border ${
+                            isLatest
+                              ? "bg-blue-950/60 hover:bg-blue-900/60 text-blue-200 border-blue-800/60"
+                              : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-700"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>{sess.sessionYear}</span>
+                            <span className="text-[9px] font-mono opacity-60">({sess.className})</span>
+                          </div>
+                          {isLatest ? <span className="text-[9px] uppercase tracking-wider">Active</span> : <ChevronRight className="w-3 h-3 opacity-50" />}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 2. School Leaving Transfer Certificate (T.C.) */}
@@ -499,6 +534,8 @@ export default async function StudentProfilePage({ params }: PageProps) {
               >
                 Class IX–X
               </Link>
+              <div className="w-px h-4 bg-zinc-800 mx-1 hidden sm:block"></div>
+              <AddHistoricalSessionButton srNumber={student.srNumber} />
             </div>
           </div>
 
@@ -529,6 +566,12 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 <span className="text-zinc-400">Category & Religion</span>
                 <span className="font-bold text-zinc-100">
                   {student.category || "General"} {student.religion ? `• ${student.religion}` : ""}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-zinc-800/60">
+                <span className="text-zinc-400">Aadhaar & APAAR</span>
+                <span className="font-bold text-zinc-100 font-mono">
+                  {student.aadharNumber ? "••••-••••-" + student.aadharNumber.slice(-4) : "—"} / {student.apaarId || "—"}
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-zinc-800/60">
@@ -570,10 +613,17 @@ export default async function StudentProfilePage({ params }: PageProps) {
                   {father?.phoneNumber || mother?.phoneNumber || primaryParent?.phoneNumber || "—"}
                 </span>
               </div>
+              <div className="flex justify-between py-1 border-b border-zinc-800/60">
+                <span className="text-zinc-400">Annual Income</span>
+                <span className="font-bold text-zinc-100">
+                  ₹ {student.motherIncome || father?.annualIncome || "—"}
+                </span>
+              </div>
               <div className="py-1">
                 <span className="text-zinc-400 block mb-1">Residential Address</span>
                 <p className="font-semibold text-zinc-300 uppercase bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 leading-relaxed text-[11px]">
-                  {father?.address || mother?.address || primaryParent?.address || "—"}
+                  C: {student.currentAddress || "—"} <br/>
+                  P: {student.permanentAddress || father?.address || mother?.address || primaryParent?.address || "—"}
                 </p>
               </div>
             </div>

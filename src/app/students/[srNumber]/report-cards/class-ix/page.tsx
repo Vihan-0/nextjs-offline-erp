@@ -21,6 +21,9 @@ interface PageProps {
   params: Promise<{
     srNumber: string;
   }>;
+  searchParams: Promise<{
+    session?: string;
+  }>;
 }
 
 function formatDate(d: Date | string | null | undefined): string {
@@ -33,9 +36,11 @@ function formatDate(d: Date | string | null | undefined): string {
   return `${day}.${month}.${year}`;
 }
 
-export default async function ClassIXReportCardPage({ params }: PageProps) {
+export default async function ClassIXReportCardPage({ params, searchParams }: PageProps) {
   const { srNumber } = await params;
   const decodedSrNumber = decodeURIComponent(srNumber).trim();
+  const search = await searchParams;
+  const sessionParam = search.session;
 
   // Eager load Student along with Parents and AcademicSession with Marks & SoftSkills
   const student = await prisma.student.findFirst({
@@ -123,11 +128,15 @@ export default async function ClassIXReportCardPage({ params }: PageProps) {
     "—";
 
   // Academic Session Details
-  const latestSession = student.academicSessions[0];
+  const selectedSession = sessionParam 
+    ? student.academicSessions.find(s => s.sessionYear === sessionParam)
+    : student.academicSessions[0];
+    
+  const latestSession = selectedSession || student.academicSessions[0];
   const className = latestSession?.className || "CLASS IX";
   const section = latestSession?.section ? ` - ${latestSession.section}` : "";
   const classAndSection = `${className}${section}`.trim();
-  const sessionYear = latestSession?.sessionYear || "2026-2027";
+  const sessionYear = latestSession?.sessionYear || "2025-2026";
 
   // Fetch student's live records directly from the Mark table (Single Source of Truth)
   const rawSubjectMarks = await fetchLiveSubjectMarks(decodedSrNumber, CLASS_IX_SUBJECTS, latestSession?.id);

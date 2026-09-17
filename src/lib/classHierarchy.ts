@@ -173,6 +173,51 @@ export function calculateCurrentClass(
   return MASTER_CLASS_HIERARCHY[newIndex];
 }
 
+/**
+ * Generates an array of all sessions (including intermediate years) from the admission session
+ * up to the current session, incrementing the class according to the hierarchy.
+ * Returns an array of objects { sessionYear: string, className: string }.
+ */
+export function generateIntermediateSessions(
+  admissionClass: string,
+  admissionSession: string,
+  currentSession: string
+): Array<{ sessionYear: string; className: string }> {
+  const admissionIndex = resolveClassIndex(admissionClass);
+  if (admissionIndex < 0) {
+    // Unrecognized class — just return the admission session
+    return [{ sessionYear: admissionSession, className: admissionClass }];
+  }
+
+  const admissionYear = parseSessionStartYear(admissionSession);
+  const currentYear = parseSessionStartYear(currentSession);
+
+  if (admissionYear === null || currentYear === null) {
+    return [{ sessionYear: admissionSession, className: MASTER_CLASS_HIERARCHY[admissionIndex] }];
+  }
+
+  const gap = currentYear - admissionYear;
+  if (gap <= 0) {
+    return [{ sessionYear: admissionSession, className: MASTER_CLASS_HIERARCHY[admissionIndex] }];
+  }
+
+  const sessions: Array<{ sessionYear: string; className: string }> = [];
+  
+  // Loop from admission year to current year (inclusive)
+  for (let i = 0; i <= gap; i++) {
+    const yearStart = admissionYear + i;
+    const yearEnd = yearStart + 1;
+    const sessionString = `${yearStart}-${yearEnd}`;
+    
+    const index = Math.min(admissionIndex + i, MASTER_CLASS_HIERARCHY.length - 1);
+    const cls = MASTER_CLASS_HIERARCHY[index];
+    
+    sessions.push({ sessionYear: sessionString, className: cls });
+  }
+
+  return sessions;
+}
+
 // ========================================================
 // STRICT REPORT CARD ROUTE MAPPING (Task 3)
 // ========================================================

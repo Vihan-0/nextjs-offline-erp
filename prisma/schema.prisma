@@ -31,7 +31,7 @@ model Student {
   recordStatus            String   @default("PENDING") // PENDING, VERIFIED, ARCHIVED, etc.
   
   // Income & Address
-  motherIncome            Float?   // Mother's annual income
+  motherIncome            String?  // Mother's annual income
   currentAddress          String?  // Current / present residential address
   permanentAddress        String?  // Permanent residential address
   

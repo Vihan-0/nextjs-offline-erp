@@ -6,6 +6,7 @@ import {
   SaveAccumulativeMarksPayload,
   StudentAccumulativeEntry,
 } from "@/actions/saveAccumulativeMarks";
+import { resolveClassIndex } from "@/lib/classHierarchy";
 import { useReactToPrint } from "react-to-print";
 import Link from "next/link";
 import { PrintableMarksLedger } from "./PrintableMarksLedger";
@@ -84,18 +85,18 @@ interface AccumulativeRegisterGridProps {
 
 // Available classes & categories
 export const CLASS_OPTIONS = [
-  { label: "NURSERY", format: "A" },
-  { label: "L.K.G.", format: "A" },
-  { label: "U.K.G.", format: "A" },
-  { label: "CLASS I", format: "A" },
-  { label: "CLASS II", format: "A" },
-  { label: "CLASS III", format: "B" },
-  { label: "CLASS IV", format: "B" },
-  { label: "CLASS V", format: "B" },
-  { label: "CLASS VI", format: "C" },
-  { label: "CLASS VII", format: "C" },
-  { label: "CLASS VIII", format: "C" },
-  { label: "CLASS IX", format: "C" },
+  { label: "Nursery - PP3", format: "A" },
+  { label: "LKG - PP2", format: "A" },
+  { label: "UKG - PP1", format: "A" },
+  { label: "Class 1", format: "A" },
+  { label: "Class 2", format: "A" },
+  { label: "Class 3", format: "B" },
+  { label: "Class 4", format: "B" },
+  { label: "Class 5", format: "B" },
+  { label: "Class 6", format: "C" },
+  { label: "Class 7", format: "C" },
+  { label: "Class 8", format: "C" },
+  { label: "Class 9", format: "C" },
 ];
 
 export const TERMS_FORMAT_A = ["Term I", "Term II", "Term III", "Term IV", "All Terms"];
@@ -131,7 +132,7 @@ export function calculateGradeFromPercentage(pct: number): string {
 
 export function AccumulativeRegisterGrid({
   initialStudents,
-  defaultClass = "CLASS III",
+  defaultClass = "Class 3",
   defaultSessionYear = "2026-2027",
 }: AccumulativeRegisterGridProps) {
   const [selectedClass, setSelectedClass] = useState(defaultClass);
@@ -218,7 +219,7 @@ export function AccumulativeRegisterGrid({
         student.sessions.find(
           (s) =>
             s.sessionYear === selectedSessionYear &&
-            s.className.toUpperCase() === selectedClass.toUpperCase()
+            resolveClassIndex(s.className) === resolveClassIndex(selectedClass)
         ) || student.sessions[0];
 
       const { height, weight } = parsePhysique(student.medicalConditions);
@@ -289,7 +290,7 @@ export function AccumulativeRegisterGrid({
       // Must have a session entry matching BOTH the selected class AND session year
       const hasMatchingSession = student.sessions.some(
         (s) =>
-          s.className.toUpperCase() === selectedClass.toUpperCase() &&
+          resolveClassIndex(s.className) === resolveClassIndex(selectedClass) &&
           s.sessionYear === selectedSessionYear
       );
 
@@ -673,7 +674,7 @@ export function AccumulativeRegisterGrid({
               >
                 {CLASS_OPTIONS.map((c) => (
                   <option key={c.label} value={c.label}>
-                    {c.label} ({c.format === "A" ? "Nursery-II" : c.format === "B" ? "III-V" : "VI-VIII"})
+                    {c.label}
                   </option>
                 ))}
               </select>
@@ -707,6 +708,10 @@ export function AccumulativeRegisterGrid({
                 <option value="2026-2027">2026-2027</option>
                 <option value="2025-2026">2025-2026</option>
                 <option value="2024-2025">2024-2025</option>
+                <option value="2023-2024">2023-2024</option>
+                <option value="2022-2023">2022-2023</option>
+                <option value="2021-2022">2021-2022</option>
+                <option value="2020-2021">2020-2021</option>
               </select>
             </div>
           </div>

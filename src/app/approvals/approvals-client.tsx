@@ -176,9 +176,14 @@ export function ApprovalsClient({ requests }: ApprovalsClientProps) {
             const hasStatus = statusMsg && statusMsg.id === req.id;
             const studentName = `${req.student.firstName} ${req.student.lastName}`.trim();
 
+            const isHistoricalSession = proposed._editType === "ADD_HISTORICAL_SESSION";
+            const isDeleteRequest = proposed._editType === "DELETE_STUDENT";
+
             // Find fields that differ
             const changedFields = Object.keys(proposed).filter((key) => {
-              if (!FIELD_LABELS[key]) return false;
+              if (isDeleteRequest && key === "reason") return true;
+              if (!FIELD_LABELS[key] && !isHistoricalSession) return false;
+              if (isHistoricalSession) return true; // Show all included fields for historical session
               const existingVal = getExistingValue(req.student, key);
               const proposedVal = proposed[key]?.toString() || "";
               return proposedVal && existingVal !== proposedVal;
@@ -206,7 +211,13 @@ export function ApprovalsClient({ requests }: ApprovalsClientProps) {
                       </span>
                     </div>
                     <p className="text-[11px] text-zinc-400 mt-0.5">
-                      {changedFields.length} field{changedFields.length !== 1 ? "s" : ""} modified
+                      {isDeleteRequest ? (
+                        <span className="text-red-400 font-bold">⚠️ Permanent Record Deletion Request</span>
+                      ) : isHistoricalSession ? (
+                        <span className="text-amber-400 font-bold">New Historical Session</span>
+                      ) : (
+                        <>{changedFields.length} field{changedFields.length !== 1 ? "s" : ""} modified</>
+                      )}
                       {attachedFiles.length > 0 ? ` • ${attachedFiles.length} file${attachedFiles.length !== 1 ? "s" : ""}` : ""}
                       {" • "}Submitted by {req.submittedBy || "Staff"} on {new Date(req.createdAt).toLocaleDateString("en-IN")}
                     </p>
@@ -232,7 +243,7 @@ export function ApprovalsClient({ requests }: ApprovalsClientProps) {
                         {changedFields.map((key) => {
                           const existingVal = getExistingValue(req.student, key);
                           const proposedVal = proposed[key]?.toString() || "";
-                          const isChanged = existingVal !== proposedVal;
+                          const isChanged = isHistoricalSession || existingVal !== proposedVal;
 
                           return (
                             <div
@@ -245,7 +256,7 @@ export function ApprovalsClient({ requests }: ApprovalsClientProps) {
                                 {FIELD_LABELS[key] || key}
                               </span>
                               <span className="text-zinc-500 font-mono break-all">
-                                {existingVal || "—"}
+                                {isHistoricalSession ? "—" : existingVal || "—"}
                               </span>
                               <span className={`font-mono break-all ${isChanged ? "text-emerald-400 font-bold" : "text-zinc-400"}`}>
                                 {proposedVal || "—"}
@@ -256,8 +267,21 @@ export function ApprovalsClient({ requests }: ApprovalsClientProps) {
                             </div>
                           );
                         })}
+
                       </div>
                     </div>
+
+                    {isDeleteRequest && (
+                      <div className="bg-red-950/20 rounded-xl border border-red-900/40 p-4 space-y-2 mt-4">
+                        <h4 className="text-[11px] font-mono uppercase text-red-400 font-bold flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4" />
+                          Danger: Permanent Deletion
+                        </h4>
+                        <p className="text-xs text-red-200/70">
+                          Approving this request will permanently cascade delete the scholar from the database, wiping all historical sessions, marks, and parent data. This action is irreversible.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Attached Files */}
                     {attachedFiles.length > 0 && (

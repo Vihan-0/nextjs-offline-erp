@@ -127,6 +127,107 @@ export async function approveEditRequest(requestId: string) {
 
     studentUpdate.recordStatus = "APPROVED";
 
+    if (proposed._editType === "DELETE_STUDENT") {
+      await prisma.$transaction(async (tx) => {
+        await tx.student.delete({
+          where: { id: student.id },
+        });
+
+        await tx.studentEditRequest.update({
+          where: { id: requestId },
+          data: {
+            status: "APPROVED",
+            reviewedAt: new Date(),
+          },
+        });
+      });
+
+      await recordAuditLogAction({
+        actionType: "STUDENT_DELETED",
+        studentSrNumber: srNumber,
+        prefix: "DEL",
+        details: {
+          requestId,
+          deletedBy: "Director (Executive Key)",
+          reason: (proposed.reason as string) || "Permanent record removal via edit request",
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      revalidatePath("/directory");
+      revalidatePath("/registers/data-entry");
+      revalidatePath("/director-dashboard");
+      revalidatePath("/approvals");
+      revalidatePath("/");
+
+      return {
+        success: true,
+        message: `Director authorization granted: Scholar "${srNumber}" has been permanently deleted from the database.`,
+      };
+    }
+
+    if (proposed._editType === "ADD_HISTORICAL_SESSION") {
+      const sessionYear = proposed.sessionYear as string;
+      const className = proposed.className as string;
+
+      if (!sessionYear || !className) {
+        return { success: false, error: "Missing session year or class name." };
+      }
+
+      await prisma.$transaction(async (tx) => {
+        if (proposed.sessionsToCreate && Array.isArray(proposed.sessionsToCreate)) {
+          await tx.academicSession.createMany({
+            data: proposed.sessionsToCreate.map((s: any) => ({
+              studentSrNumber: srNumber,
+              sessionYear: s.sessionYear,
+              className: s.className,
+            })),
+          });
+        } else {
+          await tx.academicSession.create({
+            data: {
+              studentSrNumber: srNumber,
+              sessionYear,
+              className,
+            },
+          });
+        }
+
+        await tx.studentEditRequest.update({
+          where: { id: requestId },
+          data: {
+            status: "APPROVED",
+            reviewedAt: new Date(),
+          },
+        });
+      });
+
+      await recordAuditLogAction({
+        actionType: "HISTORICAL_SESSION_APPROVED",
+        studentSrNumber: srNumber,
+        prefix: "HSA",
+        details: {
+          requestId,
+          sessionYear,
+          className,
+          generatedCount: proposed.sessionsToCreate && Array.isArray(proposed.sessionsToCreate) ? proposed.sessionsToCreate.length : 1,
+          approvedBy: "Director (Executive Key)",
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      revalidatePath(`/students/${encodeURIComponent(srNumber)}`);
+      revalidatePath("/registers/data-entry");
+      revalidatePath("/director-dashboard");
+      revalidatePath("/approvals");
+      revalidatePath("/");
+
+      return {
+        success: true,
+        message: `Historical session ${sessionYear} (${className}) approved and added for Scholar "${srNumber}".`,
+      };
+    }
+
     await prisma.$transaction(async (tx) => {
       // 1. Update live Student record
       await tx.student.update({

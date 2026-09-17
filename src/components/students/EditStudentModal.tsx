@@ -46,7 +46,7 @@ export interface StudentEditData {
   motherPhone?: string | null;
   motherOccupation?: string | null;
   motherEducation?: string | null;
-  motherIncome?: number | null;
+  motherIncome?: string | null;
   address?: string | null;
   currentAddress?: string | null;
   permanentAddress?: string | null;

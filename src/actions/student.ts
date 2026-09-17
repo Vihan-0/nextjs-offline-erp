@@ -9,7 +9,7 @@ import path from "path";
 import { revalidatePath } from "next/cache";
 import { verifyDirectorSession } from "./auth";
 import { recordAuditLogAction } from "./audit";
-import { calculateCurrentClass, CURRENT_SESSION, resolveCanonicalClassName } from "@/lib/classHierarchy";
+import { calculateCurrentClass, CURRENT_SESSION, resolveCanonicalClassName, generateIntermediateSessions } from "@/lib/classHierarchy";
 
 // Helper to save sensitive file enclosures to private offline storage
 async function saveFile(file: unknown): Promise<string | null> {
@@ -128,15 +128,28 @@ export async function createStudentAction(formData: FormData) {
       ? encryptData(validatedData.aadharNumber.replace(/\s/g, ""))
       : null;
 
+    const CURRENT_SESSION = "2026-2027";
     // Calculate admission and current class
     const admissionClassName = validatedData.className || "Nursery - PP3";
-    const admissionSession = validatedData.sessionYear || "2026-2027";
+    const admissionSession = validatedData.sessionYear || CURRENT_SESSION;
     const computedCurrentClass = calculateCurrentClass(
       admissionClassName,
       admissionSession,
       CURRENT_SESSION
     );
     const canonicalAdmissionClass = resolveCanonicalClassName(admissionClassName);
+
+    const generatedSessions = generateIntermediateSessions(
+      canonicalAdmissionClass,
+      admissionSession,
+      CURRENT_SESSION
+    );
+
+    const sessionsToCreate = generatedSessions.map((s) => ({
+      sessionYear: s.sessionYear,
+      className: s.className,
+      resultStatus: s.sessionYear === CURRENT_SESSION ? "Enrolled" : "Promoted",
+    }));
 
     // 3. Save to database using Prisma transaction
     const student = await prisma.student.create({
@@ -154,9 +167,7 @@ export async function createStudentAction(formData: FormData) {
         category: validatedData.category || null,
         nationality: validatedData.nationality || "Indian",
         aadharNumber: encryptedAadhar,
-        motherIncome: validatedData.motherIncome
-          ? parseFloat(validatedData.motherIncome)
-          : null,
+        motherIncome: validatedData.motherIncome || null,
         currentAddress: validatedData.currentAddress || null,
         permanentAddress: validatedData.permanentAddress || null,
         admissionClass: canonicalAdmissionClass,
@@ -170,13 +181,7 @@ export async function createStudentAction(formData: FormData) {
         allergies: validatedData.allergies || null,
         recordStatus: "PENDING", // Maker-Checker clearance queue
         academicSessions: {
-          create: [
-            {
-              sessionYear: validatedData.sessionYear || "2026-2027",
-              className: computedCurrentClass,
-              resultStatus: "Enrolled",
-            },
-          ],
+          create: sessionsToCreate,
         },
         parents: {
           create: [
@@ -303,30 +308,14 @@ export async function deleteStudentAction(srNumber: string, reason?: string) {
         where: { id: existing.id },
       });
 
-      revalidatePath("/directory");
-      revalidatePath("/");
-      revalidatePath("/registers/data-entry");
-      revalidatePath("/director-dashboard");
-
-      return {
-        success: true,
-        message: `Director authorization granted: Scholar "${cleanSr}" (${existing.firstName} ${existing.lastName}) has been permanently deleted from the database.`,
-      };
-    } else {
-      // Maker-Checker: Mark as PENDING_DELETION and notify Director's Dashboard
-      await prisma.student.update({
-        where: { id: existing.id },
-        data: { recordStatus: "PENDING_DELETION" },
-      });
-
       await recordAuditLogAction({
-        actionType: "STUDENT_DELETION_REQUESTED",
+        actionType: "STUDENT_DELETED",
         studentSrNumber: cleanSr,
         prefix: "DEL",
         details: {
-          requestedAt: new Date().toISOString(),
-          reason: reason || "Staff requested permanent record removal",
-          studentName: `${existing.firstName} ${existing.lastName}`.trim(),
+          deletedBy: "Director (Executive Key)",
+          reason: reason || "Permanent record removal",
+          timestamp: new Date().toISOString(),
         },
       });
 
@@ -337,7 +326,53 @@ export async function deleteStudentAction(srNumber: string, reason?: string) {
 
       return {
         success: true,
-        message: `Deletion request for Scholar "${cleanSr}" (${existing.firstName} ${existing.lastName}) has been submitted to the Director's Dashboard for Maker-Checker confirmation.`,
+        message: `Director authorization granted: Scholar "${cleanSr}" (${existing.firstName} ${existing.lastName}) has been permanently deleted from the database.`,
+      };
+    } else {
+      // Maker-Checker: Create an Edit Request for Director Approval
+      const proposedData = JSON.stringify({
+        _editType: "DELETE_STUDENT",
+        reason: reason || "Staff requested permanent record removal",
+      });
+
+      await prisma.$transaction(async (tx) => {
+        const request = await tx.studentEditRequest.create({
+          data: {
+            studentSrNumber: cleanSr,
+            proposedData,
+            status: "PENDING",
+            submittedBy: "Staff Member",
+          },
+        });
+
+        await tx.student.update({
+          where: { id: existing.id },
+          data: { recordStatus: "PENDING_DELETION" },
+        });
+
+        await recordAuditLogAction({
+          actionType: "EDIT_REQUEST_SUBMITTED",
+          studentSrNumber: cleanSr,
+          prefix: "ESTG",
+          details: {
+            requestId: request.id,
+            editType: "DELETE_STUDENT",
+            status: "PENDING_DIRECTOR_APPROVAL",
+            reason: reason || "Staff requested permanent record removal",
+            studentName: `${existing.firstName} ${existing.lastName}`.trim(),
+          },
+        });
+      });
+
+      revalidatePath("/directory");
+      revalidatePath("/");
+      revalidatePath("/registers/data-entry");
+      revalidatePath("/director-dashboard");
+      revalidatePath("/approvals");
+
+      return {
+        success: true,
+        message: `Delete request submitted to Director's Desk for Scholar "${cleanSr}". Pending authorization.`,
       };
     }
   } catch (error: unknown) {
@@ -397,7 +432,7 @@ export async function updateStudentAction(formData: FormData) {
     const permanentAddress = formData.get("permanentAddress")?.toString().trim() || existingStudent.permanentAddress;
     const aadharNumberRaw = formData.get("aadharNumber")?.toString().trim();
     const motherIncomeRaw = formData.get("motherIncome")?.toString();
-    const motherIncome = motherIncomeRaw ? parseFloat(motherIncomeRaw) : existingStudent.motherIncome;
+    const motherIncome = motherIncomeRaw || existingStudent.motherIncome;
 
     // Parent information
     const fatherName = formData.get("fatherName")?.toString().trim();
