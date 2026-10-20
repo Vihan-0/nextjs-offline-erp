@@ -1,10 +1,14 @@
 import prisma from '@/lib/prisma';
 import Link from 'next/link';
 import { StudentTable, StudentDirectoryItem } from './student-table';
+import { parseSessionStartYear } from '@/lib/classHierarchy';
 
 export default async function DirectoryPage() {
-  // Fetch all students, including their latest academic session and parent details
+  // Fetch all enrolled active students (excluding students whose TC has been issued)
   const studentsRaw = await prisma.student.findMany({
+    where: {
+      recordStatus: { not: "TC_ISSUED" },
+    },
     include: {
       academicSessions: {
         orderBy: { createdAt: 'desc' },
@@ -18,16 +22,22 @@ export default async function DirectoryPage() {
 
   // Map database models to the flat structure expected by our Client Component Table
   const students: StudentDirectoryItem[] = studentsRaw.map((s) => {
-    const currentSession = s.academicSessions[0];
+    const sortedSessions = [...s.academicSessions].sort((a, b) => {
+      const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+      const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+      if (yA !== yB) return yB - yA;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+    const currentSession = sortedSessions[0];
 
     // Attempt to find Father first, fallback to first parent found
-    const father = s.parents.find(p => p.relationType === 'Father') || s.parents[0];
+    const father = s.parents.find(p => p.relationType?.toLowerCase() === 'father') || s.parents[0];
 
     return {
       id: s.id,
       srNumber: s.srNumber,
       fullName: `${s.firstName} ${s.lastName}`.trim(),
-      currentClass: currentSession ? currentSession.className : 'N/A',
+      currentClass: s.currentClass || (currentSession ? currentSession.className : (s.admissionClass || 'N/A')),
       fathersName: father ? `${father.firstName} ${father.lastName}`.trim() : 'N/A',
       contactNumber: father?.phoneNumber || 'N/A',
       photoPath: s.photoPath,
@@ -67,6 +77,12 @@ export default async function DirectoryPage() {
               className="inline-flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-2 rounded-lg text-sm font-bold shadow-xs transition-colors"
             >
               Marks Register
+            </Link>
+            <Link
+              href="/tc-register"
+              className="inline-flex items-center gap-1.5 bg-rose-900 hover:bg-rose-800 text-white px-3.5 py-2 rounded-lg text-sm font-bold shadow-xs transition-colors"
+            >
+              TC Register
             </Link>
           </div>
         </div>

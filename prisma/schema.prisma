@@ -11,68 +11,71 @@ datasource db {
 }
 
 model Student {
-  id                      String   @id @default(uuid())
-  srNumber                String   @unique // Scholar Register Number (Primary Key reference)
-  
+  id       String @id @default(uuid())
+  srNumber String @unique // Scholar Register Number (Primary Key reference)
+
   // Demographics
-  firstName               String
-  lastName                String
-  dateOfBirth             DateTime
-  gender                  String
-  bloodGroup              String?
-  distanceFromSchool      Float?   // in km
-  religion                String?
-  category                String?  // General, SC, ST, OBC
-  nationality             String?  @default("Indian")
-  
+  firstName          String
+  lastName           String
+  dateOfBirth        DateTime
+  gender             String
+  bloodGroup         String?
+  distanceFromSchool Float? // in km
+  religion           String?
+  category           String? // General, SC, ST, OBC
+  nationality        String?  @default("Indian")
+
   // Enterprise & Secure Identifiers
-  apaarId                 String?  // 12-digit APAAR / PEN ID
-  aadharNumber            String?  // 12-digit Aadhaar number (encrypted at rest)
-  recordStatus            String   @default("PENDING") // PENDING, VERIFIED, ARCHIVED, etc.
-  
+  penNumber    String? // 11-digit UDISE+ PEN
+  apaarId      String? // 12-digit APAAR ID
+  aadharNumber String? // 12-digit Aadhaar number (encrypted at rest)
+  recordStatus String  @default("PENDING") // PENDING, VERIFIED, ARCHIVED, etc.
+
   // Income & Address
-  motherIncome            String?  // Mother's annual income
-  currentAddress          String?  // Current / present residential address
-  permanentAddress        String?  // Permanent residential address
-  
+  motherIncome     String? // Mother's annual income
+  currentAddress   String? // Current / present residential address
+  permanentAddress String? // Permanent residential address
+
   // Class Tracking (Admission vs. Current)
-  admissionClass          String?  // Original class at time of admission (frozen)
-  currentClass            String?  // Dynamically computed active class
-  
+  admissionDate    DateTime?
+  admissionSession String? // Initial session of admission (e.g. "2023-2024")
+  admissionClass   String? // Original class at time of admission (frozen)
+  currentClass     String? // Dynamically computed active class
+
   // Enclosures (Local File Paths for Offline Use)
   photoPath               String?
   birthCertificatePath    String?
   aadharCardPath          String?
   transferCertificatePath String?
   parentPanCardPath       String?
-  
+
   // Medical
-  medicalConditions       String?
-  allergies               String?
+  medicalConditions String?
+  allergies         String?
 
   // Timestamps
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // General Administrative / Behavioral Remark
-  generalRemark           String?
+  generalRemark String?
 
   // Relations
-  parents                 Parent[]
-  academicSessions        AcademicSession[]
-  printAudits             PrintAudit[]
-  auditLogs               AuditLog[]
-  tcRecords               TransferCertificateRecord[]
-  feeProfile              StudentFeeProfile?
-  editRequests            StudentEditRequest[]
+  parents          Parent[]
+  academicSessions AcademicSession[]
+  printAudits      PrintAudit[]
+  auditLogs        AuditLog[]
+  tcRecords        TransferCertificateRecord[]
+  feeProfile       StudentFeeProfile?
+  editRequests     StudentEditRequest[]
 }
 
 model Parent {
-  id                     String   @id @default(uuid())
-  studentSrNumber        String
-  student                Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
-  
-  relationType           String   // "Father", "Mother", "Guardian"
+  id              String  @id @default(uuid())
+  studentSrNumber String
+  student         Student @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade, onUpdate: Cascade)
+
+  relationType           String // "Father", "Mother", "Guardian"
   firstName              String
   lastName               String
   educationQualification String?
@@ -81,97 +84,98 @@ model Parent {
   phoneNumber            String?
   email                  String?
   address                String?
-  
+
   // Enterprise additions
-  panNumber              String?  // Encrypted PAN Number
-  panCardPath            String?  // Photo / PDF of PAN Card
-  fatherPhotoPath        String?
-  motherPhotoPath        String?
-  parentPhotoPath        String?
-  
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  aadharNumber    String? // Encrypted Aadhaar Number
+  panNumber       String? // Encrypted PAN Number
+  panCardPath     String? // Photo / PDF of PAN Card
+  fatherPhotoPath String?
+  motherPhotoPath String?
+  parentPhotoPath String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AcademicSession {
-  id                     String   @id @default(uuid())
-  studentSrNumber        String
-  student                Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
-  
-  sessionYear            String   // e.g., "2023-2024"
-  className              String   // Pre-Primary, Class I, Class IX, etc.
-  section                String?
-  rollNumber             String?
-  
+  id              String  @id @default(uuid())
+  studentSrNumber String
+  student         Student @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade, onUpdate: Cascade)
+
+  sessionYear String // e.g., "2023-2024"
+  className   String // Pre-Primary, Class I, Class IX, etc.
+  section     String?
+  rollNumber  String?
+
   // Attendance tracking (Aggregated for Half-Yearly/Annual and 10-year track)
-  halfYearlyAttendance   Int?
-  halfYearlyTotalDays    Int?
-  annualAttendance       Int?
-  annualTotalDays        Int?
-  
+  halfYearlyAttendance Int?
+  halfYearlyTotalDays  Int?
+  annualAttendance     Int?
+  annualTotalDays      Int?
+
   // Accumulative Registers: Single-meeting attendance tracking
-  totalMeetingsPresent   Int?
-  totalMeetings          Int?
-  
+  totalMeetingsPresent Int?
+  totalMeetings        Int?
+
   // Status
-  resultStatus           String?  // Promoted, Detained, etc.
-  rank                   Int?     // Auto-assigned by scoring engine if criteria met
-  
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  resultStatus String? // Promoted, Detained, etc.
+  rank         Int? // Auto-assigned by scoring engine if criteria met
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  marks                  Mark[]
-  softSkills             SoftSkill[]
+  marks      Mark[]
+  softSkills SoftSkill[]
 }
 
 // Handles accumulative standard marks (Oral/Written, Unit Tests, Half-Yearly, Annual)
 model Mark {
-  id                     String   @id @default(uuid())
-  academicSessionId      String
-  academicSession        AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
-  
-  subjectName            String
-  examType               String   // Unit Test 1, Half-Yearly, Annual, etc.
-  
-  // Breakdown of marks
-  oralMarksObtained      Float?
-  oralMaxMarks           Float?
-  writtenMarksObtained   Float?
-  writtenMaxMarks        Float?
-  
-  // Used if subject doesn't separate oral/written
-  totalMarksObtained     Float?
-  totalMaxMarks          Float?
-  
-  // Grade calculated dynamically by the scoring engine later, but cached here
-  grade                  String?  
+  id                String          @id @default(uuid())
+  academicSessionId String
+  academicSession   AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  subjectName String
+  examType    String // Unit Test 1, Half-Yearly, Annual, etc.
+
+  // Breakdown of marks
+  oralMarksObtained    Float?
+  oralMaxMarks         Float?
+  writtenMarksObtained Float?
+  writtenMaxMarks      Float?
+
+  // Used if subject doesn't separate oral/written
+  totalMarksObtained Float?
+  totalMaxMarks      Float?
+
+  // Grade calculated dynamically by the scoring engine later, but cached here
+  grade String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Handles 5-Tier Report Card special fields (Motor skills, hygiene, etc.)
 model SoftSkill {
-  id                     String   @id @default(uuid())
-  academicSessionId      String
-  academicSession        AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
-  
-  skillName              String   // e.g., "Motor Skills", "Hygiene Rating", "Discipline"
-  term                   String   // Half-Yearly, Annual
-  grade                  String   // e.g., A, B, C, A+
-  remarks                String?
+  id                String          @id @default(uuid())
+  academicSessionId String
+  academicSession   AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  skillName String // e.g., "Motor Skills", "Hygiene Rating", "Discipline"
+  term      String // Half-Yearly, Annual
+  grade     String // e.g., A, B, C, A+
+  remarks   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Model to track printing activities for enterprise audit compliance
 model PrintAudit {
   id              String   @id @default(uuid())
-  documentType    String   // e.g., 'REPORT_CARD', 'TC'
+  documentType    String // e.g., 'REPORT_CARD', 'TC'
   studentSrNumber String
-  student         Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+  student         Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade, onUpdate: Cascade)
   printId         String   @unique
   printedAt       DateTime @default(now())
 }
@@ -179,13 +183,13 @@ model PrintAudit {
 // Enterprise Universal Audit Ledger
 model AuditLog {
   id              String   @id @default(uuid())
-  actionType      String   // e.g., "PRINT_TC", "PRINT_REPORT_CARD", "EDIT_MARK", "EDIT_DEMOGRAPHICS"
+  actionType      String // e.g., "PRINT_TC", "PRINT_REPORT_CARD", "EDIT_MARK", "EDIT_DEMOGRAPHICS"
   studentSrNumber String
   traceCode       String   @unique // A unique 8-character hex string (e.g., 'TC-8F92A1B3' or 'EDT-4C29F01A')
-  details         String?  // JSON stringified details of what changed or what was printed
+  details         String? // JSON stringified details of what changed or what was printed
   timestamp       DateTime @default(now())
-  
-  student         Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+
+  student Student @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade, onUpdate: Cascade)
 }
 
 // ========================================================
@@ -193,37 +197,39 @@ model AuditLog {
 // ========================================================
 
 model TransferCertificateRecord {
-  id                     String   @id @default(uuid())
-  studentSrNumber        String
-  student                Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+  id              String  @id @default(uuid())
+  studentSrNumber String
+  student         Student @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade, onUpdate: Cascade)
 
-  tcNumber               String   @unique // e.g. "TC/2026/001"
-  studentName            String
-  fatherName             String
-  motherName             String?
-  admissionClass         String?
-  leavingClass           String
-  admissionDate          DateTime?
-  leavingDate            DateTime
-  yearsStudied           String   // e.g. "2021 - 2026 (5 Years)"
+  tcNumber       String    @unique // e.g. "TC/2026/001"
+  studentName    String
+  fatherName     String
+  motherName     String?
+  admissionClass String?
+  leavingClass   String
+  admissionDate  DateTime?
+  leavingDate    DateTime
+  yearsStudied   String // e.g. "2021 - 2026 (5 Years)"
 
-  issueDate              DateTime @default(now())
-  issuedBy               String   @default("Principal")
-  reasonForLeaving       String?
-  conduct                String   @default("Good")
+  issueDate        DateTime @default(now())
+  issuedBy         String   @default("Principal")
+  reasonForLeaving String?
+  conduct          String   @default("Good")
+  promotedTo       String?
+  feeDuesStatus    String?  @default("NIL")
 
   // Receiver / Acknowledgement Details
   receivedByName         String?
-  receivedByRelation     String?  // "Father", "Mother", "Guardian", "Self"
+  receivedByRelation     String? // "Father", "Mother", "Guardian", "Self"
   receivedDate           DateTime?
-  receiptSignatureStatus String   @default("PENDING_COLLECTION") // "SIGNED", "PENDING_COLLECTION"
+  receiptSignatureStatus String    @default("PENDING_COLLECTION") // "SIGNED", "PENDING_COLLECTION"
 
-  status                 String   @default("ISSUED") // "ISSUED", "CANCELLED"
-  remarks                String?
-  traceCode              String   @unique
+  status    String  @default("ISSUED") // "ISSUED", "CANCELLED"
+  remarks   String?
+  traceCode String  @unique
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ========================================================
@@ -231,59 +237,59 @@ model TransferCertificateRecord {
 // ========================================================
 
 model StudentFeeProfile {
-  id                     String   @id @default(uuid())
-  studentSrNumber        String   @unique
-  student                Student  @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+  id              String  @id @default(uuid())
+  studentSrNumber String  @unique
+  student         Student @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade, onUpdate: Cascade)
 
-  sessionYear            String   @default("2026-2027")
-  className              String
-  baseMonthlyFee         Float    // Monthly fee amount (e.g. 2000)
+  sessionYear    String @default("2026-2027")
+  className      String
+  baseMonthlyFee Float // Monthly fee amount (e.g. 2000)
 
   // Concession Settings
-  hasConcession          Boolean  @default(false)
-  concessionType         String?  // "SIBLING", "SINGLE_PARENT", "NEED_BASED", "STAFF_WARD", "MERIT"
-  concessionPercentage   Float?   // e.g. 25 (percent)
-  concessionAmount       Float?   // Flat rupee concession, if applicable
-  concessionReason       String?
+  hasConcession        Boolean @default(false)
+  concessionType       String? // "SIBLING", "SINGLE_PARENT", "NEED_BASED", "STAFF_WARD", "MERIT"
+  concessionPercentage Float? // e.g. 25 (percent)
+  concessionAmount     Float? // Flat rupee concession, if applicable
+  concessionReason     String?
 
-  netMonthlyFee          Float    // Effective fee after concession
-  lateFeeRatePerMonth    Float    @default(100) // ₹100 per overdue month
+  netMonthlyFee       Float // Effective fee after concession
+  lateFeeRatePerMonth Float @default(100) // ₹100 per overdue month
 
-  feeRemarks             String?  // Dedicated fee remarks / billing commitments
+  feeRemarks String? // Dedicated fee remarks / billing commitments
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  payments               FeePayment[]
+  payments FeePayment[]
 }
 
 model FeePayment {
-  id                     String   @id @default(uuid())
-  receiptNumber          String   @unique  // e.g. "REC-2026-0001"
-  studentSrNumber        String
-  feeProfileId           String
-  feeProfile             StudentFeeProfile @relation(fields: [feeProfileId], references: [id], onDelete: Cascade)
+  id              String            @id @default(uuid())
+  receiptNumber   String            @unique // e.g. "REC-2026-0001"
+  studentSrNumber String
+  feeProfileId    String
+  feeProfile      StudentFeeProfile @relation(fields: [feeProfileId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
-  sessionYear            String   @default("2026-2027")
-  className              String
-  monthCovered           String   // e.g. "April 2026"
-  installmentNumber      Int      @default(1) // 1, 2, 3… for multiple payments in same month
+  sessionYear       String @default("2026-2027")
+  className         String
+  monthCovered      String // e.g. "April 2026"
+  installmentNumber Int    @default(1) // 1, 2, 3… for multiple payments in same month
 
-  installmentPaid        Float    // Amount paid in this installment
-  lateFeeFine            Float    @default(0) // ₹100 if overdue; calculated dynamically at query time
-  totalPaid              Float    // installmentPaid + lateFeeFine
+  installmentPaid Float // Amount paid in this installment
+  lateFeeFine     Float @default(0) // ₹100 if overdue; calculated dynamically at query time
+  totalPaid       Float // installmentPaid + lateFeeFine
 
-  modeOfPayment          String   @default("CASH") // "CASH", "UPI", "CHEQUE", "BANK_TRANSFER"
-  transactionReference   String?  // Cheque No / UPI UTR
-  paymentReceivedBy      String   // Cashier / Staff name
-  paymentDate            DateTime @default(now())
-  dueDate                DateTime // Expected due date for the month; used for overdue calculation
+  modeOfPayment        String   @default("CASH") // "CASH", "UPI", "CHEQUE", "BANK_TRANSFER"
+  transactionReference String? // Cheque No / UPI UTR
+  paymentReceivedBy    String // Cashier / Staff name
+  paymentDate          DateTime @default(now())
+  dueDate              DateTime // Expected due date for the month; used for overdue calculation
 
-  status                 String   @default("PAID") // "PAID", "PENDING_CLEARANCE", "BOUNCED"
-  remarks                String?
+  status  String  @default("PAID") // "PAID", "PENDING_CLEARANCE", "BOUNCED"
+  remarks String?
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ========================================================
@@ -291,18 +297,20 @@ model FeePayment {
 // ========================================================
 
 model StudentEditRequest {
-  id              String    @id @default(uuid())
+  id              String  @id @default(uuid())
   studentSrNumber String
-  student         Student   @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade)
+  student         Student @relation(fields: [studentSrNumber], references: [srNumber], onDelete: Cascade, onUpdate: Cascade)
 
-  proposedData    String    // JSON string of { fieldName: newValue } for text edits
-  attachedFiles   String?   // JSON string of temp file paths [{ fieldName, tempPath }]
-  status          String    @default("PENDING") // "PENDING", "APPROVED", "REJECTED"
+  changeType      String  @default("EDIT_DEMOGRAPHICS") // "EDIT_DEMOGRAPHICS", "DELETE_STUDENT", "ADD_HISTORICAL_SESSION", "ISSUE_TC"
+  proposedData    String // JSON string of { fieldName: newValue } for text edits
+  attachedFiles   String? // JSON string of temp file paths [{ fieldName, tempPath }]
+  status          String  @default("PENDING") // "PENDING", "APPROVED", "REJECTED"
   rejectionReason String?
 
-  submittedBy     String?   // Staff / user identifier
-  reviewedAt      DateTime?
+  submittedBy String? // Staff / user identifier
+  reviewedAt  DateTime?
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
+

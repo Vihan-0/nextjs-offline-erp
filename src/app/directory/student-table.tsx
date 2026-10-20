@@ -22,7 +22,8 @@ import {
 } from "lucide-react";
 import { deleteStudentAction } from "@/actions/student";
 import { getEnclosureUrl } from "@/lib/enclosures";
-import { getReportCardPathForClass } from "@/lib/classHierarchy";
+import { getReportCardPathForClass, resolveCanonicalClassName } from "@/lib/classHierarchy";
+import { isSrSearchQuery, matchSrScore } from "@/lib/srNumber";
 import { EditStudentModal, StudentEditData } from "@/components/students/EditStudentModal";
 
 export type StudentDirectoryItem = {
@@ -51,23 +52,71 @@ export function StudentTable({ students }: StudentTableProps) {
 
   // Extract unique classes for the filter dropdown
   const availableClasses = useMemo(() => {
-    const classes = new Set(students.map((s) => s.currentClass).filter(Boolean));
+    const classes = new Set(students.map((s) => resolveCanonicalClassName(s.currentClass)).filter(Boolean));
     return ["All", ...Array.from(classes)].sort();
   }, [students]);
 
-  // Filter students based on search and class filter
+  // Instant 4-Digit SR Search Engine, Filter Bypass, and Exact-Match Priority Ranking
   const filteredStudents = useMemo(() => {
-    return students.filter((student) => {
-      const matchesSearch =
-        student.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        student.srNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        student.fathersName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        student.contactNumber.toLowerCase().includes(searchQuery.toLowerCase());
+    const trimmedQuery = searchQuery.trim();
+    if (!trimmedQuery && classFilter === "All") {
+      return students;
+    }
 
-      const matchesClass = classFilter === "All" || student.currentClass === classFilter;
+    const isSrQuery = isSrSearchQuery(trimmedQuery);
 
-      return matchesSearch && matchesClass;
+    const matches = students.filter((student) => {
+      if (!trimmedQuery) {
+        return (
+          classFilter === "All" ||
+          resolveCanonicalClassName(student.currentClass) === resolveCanonicalClassName(classFilter)
+        );
+      }
+
+      // Check SR match score: 2 = exact match, 1 = partial/digits match, 0 = no SR match
+      const srScore = matchSrScore(student.srNumber, trimmedQuery);
+      const isSrMatched = srScore > 0;
+
+      // General query match
+      const queryLower = trimmedQuery.toLowerCase();
+      const matchesGeneral =
+        student.fullName.toLowerCase().includes(queryLower) ||
+        student.fathersName.toLowerCase().includes(queryLower) ||
+        student.contactNumber.toLowerCase().includes(queryLower) ||
+        isSrMatched;
+
+      if (!matchesGeneral) return false;
+
+      // BYPASS CLASS FILTER ON SR NUMBER SEARCH:
+      // If the user searches an SR number (e.g. 1104, SR-1104, TH/1104) and this student's SR matches,
+      // active class dropdown filters do NOT hide the student!
+      if (isSrQuery && isSrMatched) {
+        return true;
+      }
+
+      // Otherwise respect class filter
+      const matchesClass =
+        classFilter === "All" ||
+        resolveCanonicalClassName(student.currentClass) === resolveCanonicalClassName(classFilter);
+
+      return matchesClass;
     });
+
+    // Exact-Match Priority Sorting:
+    // When a user searches, rank an exact srNumber match (#1) at the very top of the table
+    // ahead of partial matches or phone number substring matches.
+    if (trimmedQuery) {
+      matches.sort((a, b) => {
+        const scoreA = matchSrScore(a.srNumber, trimmedQuery);
+        const scoreB = matchSrScore(b.srNumber, trimmedQuery);
+        if (scoreA !== scoreB) {
+          return scoreB - scoreA; // Highest score (2 -> 1 -> 0) ranks first
+        }
+        return a.fullName.localeCompare(b.fullName);
+      });
+    }
+
+    return matches;
   }, [students, searchQuery, classFilter]);
 
   // Handle student delete confirmation

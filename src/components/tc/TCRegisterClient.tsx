@@ -4,7 +4,7 @@ import React, { useState, useTransition } from "react";
 import Link from "next/link";
 import {
   Search, Plus, FileText, CheckCircle2, Clock, ChevronRight,
-  X, Save, Loader2, AlertCircle, User, PenLine, ReceiptText,
+  X, Save, Loader2, AlertCircle, User, PenLine, ReceiptText, BookOpen,
 } from "lucide-react";
 import {
   issueTransferCertificate,
@@ -76,8 +76,11 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
   // Issue TC modal
   const [issuingModal, setIssuingModal] = useState(false);
   const [selectedSR, setSelectedSR] = useState("");
+  const [customTcNumber, setCustomTcNumber] = useState("");
   const [leavingClass, setLeavingClass] = useState("");
   const [leavingDate, setLeavingDate] = useState(new Date().toISOString().split("T")[0]);
+  const [promotedTo, setPromotedTo] = useState("");
+  const [feeDuesStatus, setFeeDuesStatus] = useState("NIL");
   const [issuedBy, setIssuedBy] = useState("Principal");
   const [reason, setReason] = useState(REASON_OPTIONS[0]);
   const [conduct, setConduct] = useState("Good");
@@ -95,12 +98,15 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
 
   // Filter logic
   const filtered = records.filter((r) => {
+    const q = search.toLowerCase();
     const matchesSearch =
       !search ||
-      r.studentName.toLowerCase().includes(search.toLowerCase()) ||
-      r.tcNumber.toLowerCase().includes(search.toLowerCase()) ||
-      r.studentSrNumber.toLowerCase().includes(search.toLowerCase()) ||
-      r.fatherName.toLowerCase().includes(search.toLowerCase());
+      r.studentName.toLowerCase().includes(q) ||
+      r.tcNumber.toLowerCase().includes(q) ||
+      r.studentSrNumber.toLowerCase().includes(q) ||
+      r.fatherName.toLowerCase().includes(q) ||
+      (r.leavingClass && r.leavingClass.toLowerCase().includes(q)) ||
+      (r.yearsStudied && r.yearsStudied.toLowerCase().includes(q));
     const matchesStatus = filterStatus === "ALL" || r.receiptSignatureStatus === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -119,6 +125,9 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
         studentSrNumber: selectedSR,
         leavingClass,
         leavingDate,
+        tcNumber: customTcNumber.trim() || undefined,
+        promotedTo: promotedTo.trim() || undefined,
+        feeDuesStatus: feeDuesStatus.trim() || "NIL",
         issuedBy,
         reasonForLeaving: reason,
         conduct,
@@ -142,7 +151,10 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
           setIssuingModal(false);
           setIssueStatus(null);
           setSelectedSR("");
+          setCustomTcNumber("");
           setLeavingClass("");
+          setPromotedTo("");
+          setFeeDuesStatus("NIL");
           setTcRemarks("");
         }, 2000);
       } else {
@@ -289,30 +301,47 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap flex-shrink-0">
                   <Link
                     href={`/students/${encodeURIComponent(record.studentSrNumber)}`}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-colors"
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-colors"
+                    title="View Frozen Scholar Profile"
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
-                    Profile
+                    <span>Profile</span>
+                  </Link>
+                  <Link
+                    href={`/students/${encodeURIComponent(record.studentSrNumber)}/transfer-certificate`}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg bg-red-950/60 hover:bg-red-900/60 text-red-300 border border-red-800/60 transition-colors"
+                    title="View & Print Official TC"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Print TC</span>
+                  </Link>
+                  <Link
+                    href={`/students/${encodeURIComponent(record.studentSrNumber)}/sr-front-page`}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg bg-amber-950/60 hover:bg-amber-900/60 text-amber-300 border border-amber-800/60 transition-colors"
+                    title="View SR Master Folio"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>SR Folio</span>
                   </Link>
                   {record.receiptSignatureStatus !== "SIGNED" && (
                     <button
                       onClick={() => openReceiverModal(record)}
-                      className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-800/60 transition-colors"
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-800/60 transition-colors"
+                      title="Record physical receipt collection"
                     >
                       <PenLine className="w-3.5 h-3.5" />
-                      Sign / Collect
+                      <span>Collect</span>
                     </button>
                   )}
                   <Link
                     href={`/verify/${encodeURIComponent(record.traceCode)}`}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg bg-zinc-950 hover:bg-zinc-900 text-zinc-400 border border-zinc-800 transition-colors"
-                    title="Verify TC trace code"
+                    className="flex items-center gap-1 px-2 py-1.5 text-xs font-bold rounded-lg bg-zinc-950 hover:bg-zinc-900 text-zinc-400 border border-zinc-800 transition-colors"
+                    title="Verify cryptographic trace code"
                   >
                     <ReceiptText className="w-3.5 h-3.5" />
-                    Verify
                   </Link>
                 </div>
               </div>
@@ -333,7 +362,7 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
                 </div>
                 <div>
                   <h2 className="font-bold text-zinc-100 text-sm">Issue Transfer Certificate</h2>
-                  <p className="text-[10px] text-zinc-500">Creates an official TC record in the archive</p>
+                  <p className="text-[10px] text-zinc-500">Official TC issuance & permanent record freeze</p>
                 </div>
               </div>
               <button onClick={() => { setIssuingModal(false); setIssueStatus(null); }} className="text-zinc-500 hover:text-zinc-200 transition-colors">
@@ -367,14 +396,15 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
                 )}
               </div>
 
+              {/* TC Number & Leaving Date */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-zinc-400 mb-1.5">Leaving Class <span className="text-red-400">*</span></label>
+                  <label className="block text-xs font-bold text-zinc-400 mb-1.5">TC Number (Optional)</label>
                   <input
-                    value={leavingClass}
-                    onChange={(e) => setLeavingClass(e.target.value)}
-                    placeholder="e.g. CLASS IX"
-                    className="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500/60 uppercase placeholder:normal-case"
+                    value={customTcNumber}
+                    onChange={(e) => setCustomTcNumber(e.target.value)}
+                    placeholder="Auto-generated (leave blank)"
+                    className="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500/60 font-mono placeholder:font-sans placeholder:text-zinc-600"
                   />
                 </div>
                 <div>
@@ -388,7 +418,39 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
                 </div>
               </div>
 
+              {/* Leaving Class & Promoted To */}
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 mb-1.5">Leaving Class <span className="text-red-400">*</span></label>
+                  <input
+                    value={leavingClass}
+                    onChange={(e) => setLeavingClass(e.target.value)}
+                    placeholder="e.g. CLASS IX"
+                    className="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500/60 uppercase placeholder:normal-case"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 mb-1.5">Promoted To</label>
+                  <input
+                    value={promotedTo}
+                    onChange={(e) => setPromotedTo(e.target.value)}
+                    placeholder="e.g. Promoted to Class X"
+                    className="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500/60 placeholder:text-zinc-600"
+                  />
+                </div>
+              </div>
+
+              {/* Fee Dues Status & Conduct */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 mb-1.5">Fee Dues Status</label>
+                  <input
+                    value={feeDuesStatus}
+                    onChange={(e) => setFeeDuesStatus(e.target.value)}
+                    placeholder="NIL"
+                    className="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500/60"
+                  />
+                </div>
                 <div>
                   <label className="block text-xs font-bold text-zinc-400 mb-1.5">Conduct</label>
                   <select
@@ -397,6 +459,19 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
                     className="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500/60"
                   >
                     {CONDUCT_OPTIONS.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 mb-1.5">Reason for Leaving</label>
+                  <select
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500/60"
+                  >
+                    {REASON_OPTIONS.map((r) => <option key={r}>{r}</option>)}
                   </select>
                 </div>
                 <div>
@@ -408,17 +483,6 @@ export function TCRegisterClient({ tcRecords: initialRecords, allStudents, stude
                     className="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500/60"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-zinc-400 mb-1.5">Reason for Leaving</label>
-                <select
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-500/60"
-                >
-                  {REASON_OPTIONS.map((r) => <option key={r}>{r}</option>)}
-                </select>
               </div>
 
               <div>

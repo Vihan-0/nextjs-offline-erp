@@ -12,6 +12,8 @@ import {
   generateDeterministicTraceCode,
   generateVerificationQRDataUrl,
 } from "@/lib/document-security";
+import { decryptData } from "@/lib/encryption";
+import { areSessionsEqual, parseSessionStartYear, normalizeTermKey, convertScoreOrGradeToLetterGrade } from "@/lib/classHierarchy";
 
 interface PageProps {
   params: Promise<{
@@ -124,15 +126,22 @@ export default async function LowerPrimaryReportCardPage({ params, searchParams 
     "—";
 
   // Academic Session Details
+  const sortedSessions = [...student.academicSessions].sort((a, b) => {
+    const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+    const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+    if (yA !== yB) return yB - yA;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
   const selectedSession = sessionParam 
-    ? student.academicSessions.find(s => s.sessionYear === sessionParam)
-    : student.academicSessions[0];
+    ? sortedSessions.find(s => areSessionsEqual(s.sessionYear, sessionParam))
+    : sortedSessions[0];
     
-  const latestSession = selectedSession || student.academicSessions[0];
-  const className = latestSession?.className || "CLASS II";
+  const latestSession = selectedSession || sortedSessions[0];
+  const className = selectedSession?.className || student.currentClass || latestSession?.className || student.admissionClass || "Class 1";
   const section = latestSession?.section ? ` - ${latestSession.section}` : "";
   const classAndSection = `${className}${section}`.trim();
-  const sessionYear = latestSession?.sessionYear || "2025-2026";
+  const sessionYear = latestSession?.sessionYear || student.admissionSession || "2026-2027";
 
   // Build Lower Primary Assessment Map (Term I, II, III, IV)
   const assessments: Record<
@@ -140,53 +149,48 @@ export default async function LowerPrimaryReportCardPage({ params, searchParams 
     { term1?: string; term2?: string; term3?: string; term4?: string }
   > = {};
 
-  // Standard high-performance sample grades for Lower Primary template
-  const defaultSubjectGrades: Record<string, [string, string, string, string]> = {
+  // Subject & Skill metric keys for Lower Primary template
+  const LOWER_PRIMARY_SUBJECT_KEYS = [
     // English
-    "English - Literature/Language": ["A+", "A+", "A+", "A+"],
-    "English - Writing / Dictation": ["A", "A+", "A+", "A+"],
-    "English - Reading / Recitation": ["A+", "A+", "A+", "A+"],
+    "English - Literature/Language",
+    "English - Writing / Dictation",
+    "English - Reading / Recitation",
     // Hindi
-    "Hindi - Literature/Language": ["A+", "A", "A+", "A+"],
-    "Hindi - Writing / Dictation": ["A", "A+", "A+", "A+"],
-    "Hindi - Reading / Recitation": ["A+", "A+", "A+", "A+"],
+    "Hindi - Literature/Language",
+    "Hindi - Writing / Dictation",
+    "Hindi - Reading / Recitation",
     // Math
-    "Mathematics - Logic and calculation": ["A+", "A+", "A+", "A+"],
-    "Mathematics - Mental ability": ["A", "A+", "A+", "A+"],
-    "Mathematics - Oral": ["A+", "A+", "A+", "A+"],
+    "Mathematics - Logic and calculation",
+    "Mathematics - Mental ability",
+    "Mathematics - Oral",
     // Right side
-    "Environmental Education - Written": ["A+", "A+", "A+", "A+"],
-    "Environmental Education - Project / Oral": ["A+", "A", "A+", "A+"],
-    "General Awareness - Written": ["A", "A+", "A+", "A+"],
-    "General Awareness - Oral": ["A+", "A+", "A+", "A+"],
-    "Computer - Theory/Practical": ["A+", "A+", "A+", "A+"],
-    "Art & Craft - Sketching/coloring origami": ["A+", "A+", "A+", "A+"],
-    "PT/Game": ["A+", "A+", "A+", "A+"],
+    "Environmental Education - Written",
+    "Environmental Education - Project / Oral",
+    "General Awareness - Written",
+    "General Awareness - Oral",
+    "Computer - Theory/Practical",
+    "Art & Craft - Sketching/coloring origami",
+    "PT/Game",
     // Developmental
-    "Learning through Audio-Visual Aids": ["A+", "A+", "A+", "A+"],
-    "Freehand Drawing Colouring": ["A+", "A+", "A+", "A+"],
-    "Dance/Music": ["A+", "A+", "A+", "A+"],
-    "Gross Motor Development": ["A+", "A+", "A+", "A+"],
-    "Motor Development": ["A+", "A+", "A+", "A+"],
-    "Freehand Co-ordination": ["A+", "A+", "A+", "A+"],
-    "Courtesy and Politeness": ["A+", "A+", "A+", "A+"],
-    "Friendliness": ["A+", "A+", "A+", "A+"],
-    "Willingness to Learn": ["A+", "A+", "A+", "A+"],
-    "Regularity Awareness of Personal Hygiene": ["A+", "A+", "A+", "A+"],
-    "Eating Habits": ["A+", "A+", "A+", "A+"],
-    "Confidence": ["A+", "A+", "A+", "A+"],
-    "Independence": ["A+", "A+", "A+", "A+"],
-    "Responsibility": ["A+", "A+", "A+", "A+"],
-  };
+    "Learning through Audio-Visual Aids",
+    "Freehand Drawing Colouring",
+    "Dance/Music",
+    "Gross Motor Development",
+    "Motor Development",
+    "Freehand Co-ordination",
+    "Courtesy and Politeness",
+    "Friendliness",
+    "Willingness to Learn",
+    "Regularity Awareness of Personal Hygiene",
+    "Eating Habits",
+    "Confidence",
+    "Independence",
+    "Responsibility",
+  ];
 
-  // 1. Initialize with default grades
-  Object.entries(defaultSubjectGrades).forEach(([key, grades]) => {
-    assessments[key] = {
-      term1: grades[0],
-      term2: grades[1],
-      term3: grades[2],
-      term4: grades[3],
-    };
+  // 1. Initialize with empty records (no fake A+ grades)
+  LOWER_PRIMARY_SUBJECT_KEYS.forEach((key) => {
+    assessments[key] = {};
   });
 
   // 2. Overlay soft skills from database if available
@@ -194,54 +198,135 @@ export default async function LowerPrimaryReportCardPage({ params, searchParams 
     latestSession.softSkills.forEach((skill) => {
       const name = skill.skillName;
       if (!assessments[name]) assessments[name] = {};
-      const termNorm = skill.term?.trim().toUpperCase();
-      if (termNorm === "I" || termNorm === "TERM 1" || termNorm === "TERM I") {
-        assessments[name].term1 = skill.grade;
-      } else if (termNorm === "II" || termNorm === "TERM 2" || termNorm === "TERM II") {
-        assessments[name].term2 = skill.grade;
-      } else if (termNorm === "III" || termNorm === "TERM 3" || termNorm === "TERM III") {
-        assessments[name].term3 = skill.grade;
-      } else if (termNorm === "IV" || termNorm === "TERM 4" || termNorm === "TERM IV") {
-        assessments[name].term4 = skill.grade;
+      const termKey = normalizeTermKey(skill.term);
+      if (termKey) {
+        assessments[name][termKey] = convertScoreOrGradeToLetterGrade(skill.grade);
       }
     });
   }
 
-  // 3. Overlay live marks from database (Single Source of Truth)
+  // Helper to map register subject names to exact Lower Primary template keys
+  const resolveLowerPrimarySubjectKey = (name: string): string => {
+    const n = name.trim().toLowerCase();
+
+    // English
+    if (n.includes("english")) {
+      if (n.includes("writing") || n.includes("dictation")) return "English - Writing / Dictation";
+      if (n.includes("reading") || n.includes("recitation")) return "English - Reading / Recitation";
+      if (n.includes("literature") || n.includes("language") || n.includes("lit") || n.includes("lang")) {
+        return "English - Literature/Language";
+      }
+    }
+
+    // Hindi
+    if (n.includes("hindi")) {
+      if (n.includes("writing") || n.includes("dictation")) return "Hindi - Writing / Dictation";
+      if (n.includes("reading") || n.includes("recitation")) return "Hindi - Reading / Recitation";
+      if (n.includes("literature") || n.includes("language") || n.includes("lit") || n.includes("lang")) {
+        return "Hindi - Literature/Language";
+      }
+    }
+
+    // Mathematics
+    if (n.includes("math")) {
+      if (n.includes("logic") || n.includes("calc")) return "Mathematics - Logic and calculation";
+      if (n.includes("mental")) return "Mathematics - Mental ability";
+      if (n.includes("oral")) return "Mathematics - Oral";
+    }
+
+    // Environmental Education
+    if (n.includes("environmental") || n.includes("evs") || n.includes("environment")) {
+      if (n.includes("project") || n.includes("oral")) return "Environmental Education - Project / Oral";
+      if (n.includes("written") || n.includes("wri")) return "Environmental Education - Written";
+    }
+
+    // General Awareness
+    if (n.includes("general") || n.includes("awareness") || n.includes("gk") || n.includes("g.k")) {
+      if (n.includes("oral")) return "General Awareness - Oral";
+      if (n.includes("written") || n.includes("wri")) return "General Awareness - Written";
+    }
+
+    // Computer
+    if (n.includes("computer")) return "Computer - Theory/Practical";
+
+    // Art & Craft
+    if (n.includes("art") || n.includes("craft") || n.includes("origami") || n.includes("drawing")) {
+      return "Art & Craft - Sketching/coloring origami";
+    }
+
+    // PT
+    if (n.includes("pt") || n.includes("game") || n.includes("p.t")) return "PT/Game";
+
+    // Fallback: match by closest existing assessment key
+    const match = Object.keys(assessments).find(
+      (k) => k.toLowerCase() === n || k.toLowerCase().includes(n) || n.includes(k.toLowerCase())
+    );
+    return match || name;
+  };
+
+  // 3. Overlay live marks from database (Single Source of Truth, scoped to active session)
   const liveMarks = await prisma.mark.findMany({
     where: {
       academicSession: {
         studentSrNumber: decodedSrNumber.toUpperCase(),
+        ...(latestSession?.id ? { id: latestSession.id } : {}),
       },
     },
     orderBy: { updatedAt: "desc" },
   });
 
+  // Track consolidated scores per subject and term for multi-component accuracy
+  const consolidatedScores: Record<
+    string,
+    Record<string, { totalScore: number; maxMarks: number; grade?: string }>
+  > = {};
+
   liveMarks.forEach((mark) => {
-    const name = mark.subjectName;
-    const targetKey = Object.keys(assessments).find(
-      (k) => k.toLowerCase() === name?.toLowerCase() || k.toLowerCase().includes(name?.toLowerCase() || "") || (name && name.toLowerCase().includes(k.toLowerCase()))
-    ) || name;
+    const targetKey = resolveLowerPrimarySubjectKey(mark.subjectName);
+    const termKey = normalizeTermKey(mark.examType);
+    if (!termKey) return;
 
-    if (!assessments[targetKey]) assessments[targetKey] = {};
-    const examNorm = mark.examType?.trim().toUpperCase() || "";
-    const grade = mark.grade || (mark.totalMarksObtained !== null && mark.totalMarksObtained !== undefined ? String(mark.totalMarksObtained) : "A+");
+    if (!consolidatedScores[targetKey]) {
+      consolidatedScores[targetKey] = {};
+    }
+    if (!consolidatedScores[targetKey][termKey]) {
+      consolidatedScores[targetKey][termKey] = { totalScore: 0, maxMarks: 0 };
+    }
 
-    if (examNorm.includes("1") || examNorm.includes("I") || examNorm.includes("UT1")) {
-      if (!assessments[targetKey].term1 || assessments[targetKey].term1 === "A+") assessments[targetKey].term1 = grade;
-    } else if (examNorm.includes("2") || examNorm.includes("II") || examNorm.includes("HALF")) {
-      if (!assessments[targetKey].term2 || assessments[targetKey].term2 === "A+") assessments[targetKey].term2 = grade;
-    } else if (examNorm.includes("3") || examNorm.includes("III") || examNorm.includes("UT2")) {
-      if (!assessments[targetKey].term3 || assessments[targetKey].term3 === "A+") assessments[targetKey].term3 = grade;
-    } else if (examNorm.includes("4") || examNorm.includes("IV") || examNorm.includes("ANNUAL")) {
-      if (!assessments[targetKey].term4 || assessments[targetKey].term4 === "A+") assessments[targetKey].term4 = grade;
+    const rawScore = mark.totalMarksObtained !== null && mark.totalMarksObtained !== undefined
+      ? mark.totalMarksObtained
+      : mark.writtenMarksObtained;
+
+    if (rawScore !== null && rawScore !== undefined && !isNaN(rawScore)) {
+      consolidatedScores[targetKey][termKey].totalScore += rawScore;
+      consolidatedScores[targetKey][termKey].maxMarks += mark.totalMaxMarks || mark.writtenMaxMarks || 100;
+    } else if (mark.grade) {
+      consolidatedScores[targetKey][termKey].grade = mark.grade;
     }
   });
 
-  // Attendance formulation
-  const annualPresent = latestSession?.annualAttendance || latestSession?.totalMeetingsPresent || 188;
-  const annualTotal = latestSession?.annualTotalDays || latestSession?.totalMeetings || 198;
-  const attendancePercentage = Math.round((annualPresent / annualTotal) * 100);
+  // Populate assessments with Letter Grades (pure grades for Class 1 and Class 2)
+  Object.entries(consolidatedScores).forEach(([targetKey, termMap]) => {
+    if (!assessments[targetKey]) assessments[targetKey] = {};
+    Object.entries(termMap).forEach(([termKey, data]) => {
+      const validTerm = termKey as "term1" | "term2" | "term3" | "term4";
+      if (data.maxMarks > 0) {
+        const pct = (data.totalScore / data.maxMarks) * 100;
+        assessments[targetKey][validTerm] = convertScoreOrGradeToLetterGrade(pct);
+      } else if (data.grade) {
+        assessments[targetKey][validTerm] = convertScoreOrGradeToLetterGrade(data.grade);
+      }
+    });
+  });
+
+  // Attendance formulation (truthful from database)
+  const annualPresent = latestSession?.annualAttendance ?? latestSession?.totalMeetingsPresent ?? null;
+  const annualTotal = latestSession?.annualTotalDays ?? latestSession?.totalMeetings ?? null;
+  const attendancePercentage = (annualPresent !== null && annualTotal !== null && annualTotal > 0)
+    ? Math.round((annualPresent / annualTotal) * 100)
+    : null;
+
+  const decryptedAadhaar = student.aadharNumber ? decryptData(student.aadharNumber) : null;
 
   // Deterministic Cryptographic Anti-Tamper Trace Code
   const traceCode = generateDeterministicTraceCode(
@@ -252,7 +337,7 @@ export default async function LowerPrimaryReportCardPage({ params, searchParams 
       dateOfBirth: student.dateOfBirth?.toISOString() || null,
       className: classAndSection,
       sessionYear,
-      resultStatus: latestSession?.resultStatus || "CLASS III",
+      resultStatus: latestSession?.resultStatus || "—",
       marksHash: JSON.stringify(assessments),
     },
     "RC"
@@ -277,7 +362,7 @@ export default async function LowerPrimaryReportCardPage({ params, searchParams 
         className: classAndSection,
         sessionYear,
         assessments,
-        promotedToClass: latestSession?.resultStatus || "CLASS III",
+        promotedToClass: latestSession?.resultStatus || "—",
         issuedAt: new Date().toISOString(),
       }),
     },
@@ -293,12 +378,14 @@ export default async function LowerPrimaryReportCardPage({ params, searchParams 
     classAndSection,
     contactNo,
     branch: "MAIN BRANCH",
-    aadhaarNo: student.aadharCardPath ? "Available on Record" : "—",
+    aadhaarNo: decryptedAadhaar ? decryptedAadhaar.replace(/(\d{4})(?=\d)/g, "$1 ") : "—",
     sessionYear,
     assessments,
-    attendance: `${annualPresent} / ${annualTotal} Days (${attendancePercentage}%)`,
-    teacherRemark: "CONFIDENT, ENERGETIC & OUTSTANDING OVERALL PERFORMANCE",
-    passedAndPromotedToClass: latestSession?.resultStatus || "CLASS III",
+    attendance: (annualPresent !== null && annualTotal !== null)
+      ? `${annualPresent} / ${annualTotal} Days (${attendancePercentage}%)`
+      : "—",
+    teacherRemark: "",
+    passedAndPromotedToClass: latestSession?.resultStatus || "",
     schoolReopenOn: "01.07.2026",
     traceCode,
     qrCodeDataUrl,

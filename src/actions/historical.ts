@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { recordAuditLogAction } from "./audit";
 import { verifyDirectorSession } from "./auth";
-import { CURRENT_SESSION, generateIntermediateSessions, resolveCanonicalClassName } from "@/lib/classHierarchy";
+import { CURRENT_SESSION, generateIntermediateSessions, resolveCanonicalClassName, areSessionsEqual, parseSessionStartYear } from "@/lib/classHierarchy";
 
 export async function stageHistoricalSessionAction(
   studentSrNumber: string,
@@ -27,9 +27,16 @@ export async function stageHistoricalSessionAction(
       return { success: false, error: "Student not found." };
     }
 
+    if (student.recordStatus === "TC_ISSUED") {
+      return {
+        success: false,
+        error: "This student's Transfer Certificate has been issued. Their academic record is permanently frozen in the TC Register and cannot be modified.",
+      };
+    }
+
     // Check if session already exists
     const sessionExists = student.academicSessions.some(
-      (s) => s.sessionYear === sessionYear && s.className === className
+      (s) => areSessionsEqual(s.sessionYear, sessionYear)
     );
 
     if (sessionExists) {
@@ -50,7 +57,7 @@ export async function stageHistoricalSessionAction(
 
     // Filter out sessions that already exist
     const sessionsToCreate = generatedSessions.filter(
-      (gs) => !student.academicSessions.some((es) => es.sessionYear === gs.sessionYear)
+      (gs) => !student.academicSessions.some((es) => areSessionsEqual(es.sessionYear, gs.sessionYear))
     );
 
     if (sessionsToCreate.length === 0) {
@@ -75,6 +82,48 @@ export async function stageHistoricalSessionAction(
           })),
         });
 
+        // Dynamic currentClass & admissionClass recalculation
+        const allSessions = [
+          ...student.academicSessions,
+          ...sessionsToCreate.map((s) => ({
+            sessionYear: s.sessionYear,
+            className: s.className,
+          })),
+        ].sort((a, b) => {
+          const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+          const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+          return yA - yB;
+        });
+
+        const earliest = allSessions[0];
+        const latest = allSessions[allSessions.length - 1];
+
+        const updateData: {
+          admissionSession?: string;
+          admissionClass?: string;
+          currentClass?: string;
+        } = {};
+
+        if (earliest) {
+          const currentAdmYear = parseSessionStartYear(student.admissionSession || "") ?? Infinity;
+          const earliestYear = parseSessionStartYear(earliest.sessionYear) ?? Infinity;
+          if (earliestYear < currentAdmYear || !student.admissionSession) {
+            updateData.admissionSession = earliest.sessionYear;
+            updateData.admissionClass = earliest.className;
+          }
+        }
+
+        if (latest) {
+          updateData.currentClass = latest.className;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await tx.student.update({
+            where: { srNumber: studentSrNumber },
+            data: updateData,
+          });
+        }
+
         await recordAuditLogAction({
           actionType: "HISTORICAL_SESSION_ADDED",
           studentSrNumber,
@@ -90,7 +139,12 @@ export async function stageHistoricalSessionAction(
       });
 
       revalidatePath(`/students/${encodeURIComponent(studentSrNumber)}`);
+      revalidatePath(`/students/${encodeURIComponent(studentSrNumber)}/sr-back-page`);
+      revalidatePath(`/students/${encodeURIComponent(studentSrNumber)}/transfer-certificate`);
       revalidatePath("/registers/data-entry");
+      revalidatePath("/directory");
+      revalidatePath("/director-dashboard");
+      revalidatePath("/");
 
       return {
         success: true,

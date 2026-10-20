@@ -62,7 +62,7 @@ export function SRBackPageClient({ student }: SRBackPageClientProps) {
   });
 
   const handleCopy = async () => {
-    const text = `S.R. Back Page: ${student.studentName} (Scholar No: ${student.srNumber}, Recorded Sessions: ${student.sessions.filter(s => s.isRecorded).length}/10 Years)`;
+    const text = `S.R. Back Page: ${student.studentName} (Scholar No: ${student.srNumber}, Recorded Sessions: ${student.sessions.filter(s => s.isRecorded).length}/13 Years)`;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -110,7 +110,7 @@ export function SRBackPageClient({ student }: SRBackPageClientProps) {
                 </span>
               </h1>
               <p className="text-xs text-zinc-400 truncate hidden md:block">
-                {student.studentName} • 10-Year Progression Ledger • Official School Register
+                {student.studentName} • 13-Year Progression Ledger • Official School Register
               </p>
             </div>
           </div>
@@ -153,7 +153,7 @@ export function SRBackPageClient({ student }: SRBackPageClientProps) {
                 </span>
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/60">
                   <Sparkles className="w-3 h-3" />
-                  A4 Print-Ready (10-Year Track)
+                  A4 Print-Ready (13-Year Track)
                 </span>
               </div>
 

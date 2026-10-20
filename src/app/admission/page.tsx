@@ -27,21 +27,9 @@ import {
 } from "lucide-react";
 import { BlankAdmissionForm } from "@/components/documents/BlankAdmissionForm";
 
-const SCHOOL_CLASSES = [
-  "NURSERY",
-  "LKG",
-  "UKG",
-  "CLASS I",
-  "CLASS II",
-  "CLASS III",
-  "CLASS IV",
-  "CLASS V",
-  "CLASS VI",
-  "CLASS VII",
-  "CLASS VIII",
-  "CLASS IX",
-  "CLASS X",
-];
+import { MASTER_CLASS_HIERARCHY } from "@/lib/classHierarchy";
+
+const SCHOOL_CLASSES = [...MASTER_CLASS_HIERARCHY];
 
 interface AttachedFile {
   file: File;
@@ -107,7 +95,10 @@ export default function AdmissionPage() {
       nationality: "Indian",
       gender: "Male",
       className: "CLASS I",
+      admissionClass: "CLASS I",
       sessionYear: "2026-2027",
+      admissionSession: "2026-2027",
+      admissionDate: new Date().toISOString().split("T")[0],
     },
   });
 
@@ -171,10 +162,10 @@ export default function AdmissionPage() {
     try {
       const formData = new FormData();
 
-      // Append validated string fields
+      // Append validated string & primitive fields
       Object.entries(data).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && typeof value === "string") {
-          formData.append(key, value);
+        if (value !== undefined && value !== null && value !== "") {
+          formData.append(key, String(value));
         }
       });
 
@@ -600,7 +591,7 @@ export default function AdmissionPage() {
               {/* Aadhaar Number */}
               <div>
                 <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
-                  Aadhaar Number (12-digit)
+                  Student Aadhaar Number (12-digit)
                 </label>
                 <input
                   {...register("aadharNumber")}
@@ -612,19 +603,48 @@ export default function AdmissionPage() {
                 {errors.aadharNumber && <p className="text-red-500 text-xs mt-1">{errors.aadharNumber.message}</p>}
               </div>
 
-              {/* APAAR / PEN ID */}
+              {/* UDISE+ PEN Number (11-digit) */}
               <div>
                 <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
-                  APAAR / PEN ID
+                  UDISE+ PEN Number (11 Digits)
+                </label>
+                <input
+                  {...register("penNumber")}
+                  className="w-full rounded-lg border px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
+                  placeholder="11-digit PEN"
+                  maxLength={11}
+                />
+                {errors.penNumber && <p className="text-red-500 text-xs mt-1">{errors.penNumber.message}</p>}
+              </div>
+
+              {/* APAAR ID (12-digit) */}
+              <div>
+                <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
+                  APAAR ID (12 Digits)
                 </label>
                 <input
                   {...register("apaarId")}
                   className="w-full rounded-lg border px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
                   style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
-                  placeholder="12-digit APAAR/PEN"
+                  placeholder="12-digit APAAR"
                   maxLength={12}
                 />
                 {errors.apaarId && <p className="text-red-500 text-xs mt-1">{errors.apaarId.message}</p>}
+              </div>
+
+              {/* Date of Admission */}
+              <div>
+                <label className="block text-xs font-bold mb-1" style={{ color: "#334155" }}>
+                  Date of Admission <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  {...register("admissionDate")}
+                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
+                />
+                {errors.admissionDate && <p className="text-red-500 text-xs mt-1">{errors.admissionDate.message}</p>}
               </div>
 
               {/* Nationality */}
@@ -637,6 +657,9 @@ export default function AdmissionPage() {
                   className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
                 />
+                {/* Hidden fields to guarantee admissionClass & admissionSession match */}
+                <input type="hidden" {...register("admissionClass")} value={watch("className")} />
+                <input type="hidden" {...register("admissionSession")} value={watch("sessionYear")} />
               </div>
 
               {/* Medical notes */}
@@ -743,6 +766,19 @@ export default function AdmissionPage() {
                     />
                   </div>
                 </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "#475569" }}>
+                    Father's Aadhaar Number (12-digit)
+                  </label>
+                  <input
+                    {...register("fatherAadhar")}
+                    className="w-full rounded-lg border px-3 py-2 text-xs font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
+                    placeholder="XXXX XXXX XXXX"
+                    maxLength={14}
+                  />
+                  {errors.fatherAadhar && <p className="text-red-500 text-xs mt-1">{errors.fatherAadhar.message}</p>}
+                </div>
               </div>
 
               {/* Mother */}
@@ -808,6 +844,19 @@ export default function AdmissionPage() {
                       style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "#475569" }}>
+                    Mother's Aadhaar Number (12-digit)
+                  </label>
+                  <input
+                    {...register("motherAadhar")}
+                    className="w-full rounded-lg border px-3 py-2 text-xs font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ backgroundColor: "#ffffff", borderColor: "#cbd5e1", color: "#0f172a" }}
+                    placeholder="XXXX XXXX XXXX"
+                    maxLength={14}
+                  />
+                  {errors.motherAadhar && <p className="text-red-500 text-xs mt-1">{errors.motherAadhar.message}</p>}
                 </div>
               </div>
 

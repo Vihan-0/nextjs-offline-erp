@@ -15,6 +15,8 @@ import {
   generateVerificationQRDataUrl,
 } from "@/lib/document-security";
 import { fetchLiveSubjectMarks, fetchLiveSoftSkills } from "@/lib/report-card-mapper";
+import { decryptData } from "@/lib/encryption";
+import { areSessionsEqual, parseSessionStartYear, resolveClassIndex, normalizeTermKey } from "@/lib/classHierarchy";
 
 interface PageProps {
   params: Promise<{
@@ -127,23 +129,27 @@ export default async function MidLevelsReportCardPage({ params, searchParams }: 
     "—";
 
   // Academic Session Details
+  const sortedSessions = [...student.academicSessions].sort((a, b) => {
+    const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+    const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+    if (yA !== yB) return yB - yA;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
   const selectedSession = sessionParam 
-    ? student.academicSessions.find(s => s.sessionYear === sessionParam)
-    : student.academicSessions[0];
+    ? sortedSessions.find(s => areSessionsEqual(s.sessionYear, sessionParam))
+    : sortedSessions[0];
     
-  const latestSession = selectedSession || student.academicSessions[0];
-  const className = latestSession?.className || "CLASS VI";
+  const latestSession = selectedSession || sortedSessions[0];
+  const className = selectedSession?.className || student.currentClass || latestSession?.className || student.admissionClass || "Class 6";
   const rawClass = className;
   const section = latestSession?.section ? ` - ${latestSession.section}` : "";
   const classAndSection = `${className}${section}`.trim();
-  const sessionYear = latestSession?.sessionYear || "2025-2026";
+  const sessionYear = latestSession?.sessionYear || student.admissionSession || "2026-2027";
 
-  // Infer level (Upper Primary vs Junior) based on class
-  const isJuniorClass =
-    /vi|vii|viii|6|7|8|junior/i.test(rawClass) && !/viii\b|vii\b|vi\b/i.test(rawClass)
-      ? true
-      : /class\s*(vi|vii|viii|6|7|8)/i.test(rawClass);
-
+  // Infer level (Upper Primary for Classes 3-5 vs Junior for Classes 6-8) based on master hierarchy
+  const classIdx = resolveClassIndex(rawClass);
+  const isJuniorClass = classIdx !== -1 ? classIdx >= 8 : /vi|vii|viii|6|7|8|junior/i.test(rawClass);
   const level: ReportCardLevel = isJuniorClass ? "junior" : "upper-primary";
   const activeSubjects = level === "junior" ? JUNIOR_SUBJECTS : UPPER_PRIMARY_SUBJECTS;
 
@@ -165,8 +171,8 @@ export default async function MidLevelsReportCardPage({ params, searchParams }: 
 
   defaultActivities.forEach((act) => {
     grades[act] = {
-      halfYearly: "A+",
-      annual: "A+",
+      halfYearly: "",
+      annual: "",
     };
   });
 
@@ -179,21 +185,26 @@ export default async function MidLevelsReportCardPage({ params, searchParams }: 
       );
       if (matchingKey) {
         const termNorm = skill.term?.trim().toUpperCase() || "";
-        if (termNorm.includes("HALF") || termNorm.includes("1") || termNorm.includes("I")) {
-          grades[matchingKey].halfYearly = skill.grade || "A+";
+        const termKey = normalizeTermKey(termNorm);
+        if (termNorm.includes("HALF") || termKey === "term1" || termKey === "term2" || termNorm === "HY") {
+          grades[matchingKey].halfYearly = skill.grade || "";
         } else {
-          grades[matchingKey].annual = skill.grade || "A+";
+          grades[matchingKey].annual = skill.grade || "";
         }
       }
     });
   }
 
-  // Attendance
-  const hyPresent = latestSession?.halfYearlyAttendance || 92;
-  const hyTotal = latestSession?.halfYearlyTotalDays || 96;
-  const annualPresent = latestSession?.annualAttendance || latestSession?.totalMeetingsPresent || 188;
-  const annualTotal = latestSession?.annualTotalDays || latestSession?.totalMeetings || 198;
-  const annualPercentage = Math.round((annualPresent / annualTotal) * 100);
+  // Attendance formulation (truthful from database)
+  const hyPresent = latestSession?.halfYearlyAttendance ?? null;
+  const hyTotal = latestSession?.halfYearlyTotalDays ?? null;
+  const annualPresent = latestSession?.annualAttendance ?? latestSession?.totalMeetingsPresent ?? null;
+  const annualTotal = latestSession?.annualTotalDays ?? latestSession?.totalMeetings ?? null;
+  const annualPercentage = (annualPresent !== null && annualTotal !== null && annualTotal > 0)
+    ? Math.round((annualPresent / annualTotal) * 100)
+    : null;
+
+  const decryptedAadhaar = student.aadharNumber ? decryptData(student.aadharNumber) : null;
 
   // Deterministic Cryptographic Anti-Tamper Trace Code
   const traceCode = generateDeterministicTraceCode(
@@ -204,7 +215,7 @@ export default async function MidLevelsReportCardPage({ params, searchParams }: 
       dateOfBirth: student.dateOfBirth?.toISOString() || null,
       className: classAndSection,
       sessionYear,
-      resultStatus: latestSession?.resultStatus || (level === "junior" ? "CLASS IX" : "CLASS VI"),
+      resultStatus: latestSession?.resultStatus || "—",
       marksHash: JSON.stringify(subjectMarks),
     },
     "RC"
@@ -230,7 +241,7 @@ export default async function MidLevelsReportCardPage({ params, searchParams }: 
         sessionYear,
         subjectMarks,
         grades,
-        promotedToClass: latestSession?.resultStatus || (level === "junior" ? "CLASS IX" : "CLASS VI"),
+        promotedToClass: latestSession?.resultStatus || "—",
         issuedAt: new Date().toISOString(),
       }),
     },
@@ -247,15 +258,15 @@ export default async function MidLevelsReportCardPage({ params, searchParams }: 
     classAndSection,
     contactNo,
     branch: "MAIN BRANCH",
-    aadhaarNo: student.aadharCardPath ? "Available on Record" : "—",
+    aadhaarNo: decryptedAadhaar ? decryptedAadhaar.replace(/(\d{4})(?=\d)/g, "$1 ") : "—",
     sessionYear,
     subjectMarks,
     grades,
-    rankInClass: latestSession?.rank ? `${latestSession.rank}${latestSession.rank === 1 ? 'st' : latestSession.rank === 2 ? 'nd' : latestSession.rank === 3 ? 'rd' : 'th'} ( R )` : "1st ( R )",
-    attendanceHalfYearly: `${hyPresent} / ${hyTotal}`,
-    attendanceAnnual: `${annualPresent} / ${annualTotal} (${annualPercentage}%)`,
-    teacherRemark: "EXCELLENT ACADEMIC PERFORMANCE & CONSISTENT EFFORT",
-    passedAndPromotedToClass: latestSession?.resultStatus || (level === "junior" ? "CLASS IX" : "CLASS VI"),
+    rankInClass: latestSession?.rank ? `${latestSession.rank}${latestSession.rank === 1 ? 'st' : latestSession.rank === 2 ? 'nd' : latestSession.rank === 3 ? 'rd' : 'th'} ( R )` : "",
+    attendanceHalfYearly: (hyPresent !== null && hyTotal !== null) ? `${hyPresent} / ${hyTotal}` : "—",
+    attendanceAnnual: (annualPresent !== null && annualTotal !== null) ? `${annualPresent} / ${annualTotal} (${annualPercentage}%)` : "—",
+    teacherRemark: "",
+    passedAndPromotedToClass: latestSession?.resultStatus || "",
     schoolReopenOn: "01.07.2026",
     traceCode,
     qrCodeDataUrl,

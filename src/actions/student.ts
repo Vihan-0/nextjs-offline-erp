@@ -9,7 +9,8 @@ import path from "path";
 import { revalidatePath } from "next/cache";
 import { verifyDirectorSession } from "./auth";
 import { recordAuditLogAction } from "./audit";
-import { calculateCurrentClass, CURRENT_SESSION, resolveCanonicalClassName, generateIntermediateSessions } from "@/lib/classHierarchy";
+import { calculateCurrentClass, CURRENT_SESSION, resolveCanonicalClassName, generateIntermediateSessions, parseSessionStartYear } from "@/lib/classHierarchy";
+import { normalizeSrNumber } from "@/lib/srNumber";
 
 // Helper to save sensitive file enclosures to private offline storage
 async function saveFile(file: unknown): Promise<string | null> {
@@ -76,24 +77,46 @@ export async function createStudentAction(formData: FormData) {
       permanentAddress: formData.get("permanentAddress") || undefined,
       parentPan: formData.get("parentPan") || undefined,
       aadharNumber: formData.get("aadharNumber") || undefined,
+      penNumber: formData.get("penNumber") || undefined,
       apaarId: formData.get("apaarId") || undefined,
+      fatherAadhar: formData.get("fatherAadhar") || undefined,
+      motherAadhar: formData.get("motherAadhar") || undefined,
       motherIncome: formData.get("motherIncome") || undefined,
-      admissionClass: formData.get("admissionClass") || undefined,
+      admissionDate: formData.get("admissionDate") || undefined,
+      admissionSession: formData.get("admissionSession") || formData.get("sessionYear") || undefined,
+      admissionClass: formData.get("admissionClass") || formData.get("className") || undefined,
       className: formData.get("className") || "Nursery - PP3",
       sessionYear: formData.get("sessionYear") || "2026-2027",
     };
 
     const validatedData = admissionSchema.parse(rawData);
+    const normalizedSr = normalizeSrNumber(validatedData.srNumber);
 
-    // Check for duplicate S.R. number
-    const existingStudent = await prisma.student.findUnique({
-      where: { srNumber: validatedData.srNumber.trim().toUpperCase() },
+    // Cross-Session Lifetime Collision Lock:
+    // Query Student table across ALL academic sessions (past, present, and future) checking exact normalized match, case-insensitive match, and trimmed strings
+    const existingStudent = await prisma.student.findFirst({
+      where: {
+        OR: [
+          { srNumber: normalizedSr },
+          { srNumber: normalizedSr.toLowerCase() },
+          { srNumber: validatedData.srNumber.trim() },
+        ],
+      },
+      select: {
+        srNumber: true,
+        firstName: true,
+        lastName: true,
+        admissionSession: true,
+        currentClass: true,
+      },
     });
 
     if (existingStudent) {
+      const admSession = existingStudent.admissionSession || "N/A";
+      const currClass = existingStudent.currentClass || "N/A";
       return {
         success: false,
-        error: `Scholar with S.R. Number "${validatedData.srNumber.trim().toUpperCase()}" already exists in the database.`,
+        error: `SR Number ${normalizedSr} is already permanently assigned to ${existingStudent.firstName} ${existingStudent.lastName} (Admitted in ${admSession}, Class ${currClass}). SR Numbers are globally unique and cannot be reused in any session.`,
       };
     }
 
@@ -123,15 +146,23 @@ export async function createStudentAction(formData: FormData) {
       ? encryptData(validatedData.parentPan.trim().toUpperCase())
       : null;
 
-    // Encrypt Aadhaar number if provided
+    // Encrypt Aadhaar numbers if provided
     const encryptedAadhar = validatedData.aadharNumber && validatedData.aadharNumber.trim()
       ? encryptData(validatedData.aadharNumber.replace(/\s/g, ""))
       : null;
 
+    const encryptedFatherAadhar = validatedData.fatherAadhar && validatedData.fatherAadhar.trim()
+      ? encryptData(validatedData.fatherAadhar.replace(/\s/g, ""))
+      : null;
+
+    const encryptedMotherAadhar = validatedData.motherAadhar && validatedData.motherAadhar.trim()
+      ? encryptData(validatedData.motherAadhar.replace(/\s/g, ""))
+      : null;
+
     const CURRENT_SESSION = "2026-2027";
     // Calculate admission and current class
-    const admissionClassName = validatedData.className || "Nursery - PP3";
-    const admissionSession = validatedData.sessionYear || CURRENT_SESSION;
+    const admissionClassName = validatedData.admissionClass || validatedData.className || "Nursery - PP3";
+    const admissionSession = validatedData.admissionSession || validatedData.sessionYear || CURRENT_SESSION;
     const computedCurrentClass = calculateCurrentClass(
       admissionClassName,
       admissionSession,
@@ -151,79 +182,90 @@ export async function createStudentAction(formData: FormData) {
       resultStatus: s.sessionYear === CURRENT_SESSION ? "Enrolled" : "Promoted",
     }));
 
-    // 3. Save to database using Prisma transaction
-    const student = await prisma.student.create({
-      data: {
-        srNumber: validatedData.srNumber.trim().toUpperCase(),
-        firstName: validatedData.firstName.toUpperCase().trim(),
-        lastName: validatedData.lastName.toUpperCase().trim(),
-        dateOfBirth: new Date(validatedData.dateOfBirth),
-        gender: validatedData.gender,
-        bloodGroup: validatedData.bloodGroup || null,
-        distanceFromSchool: validatedData.distanceFromSchool
-          ? parseFloat(validatedData.distanceFromSchool)
-          : null,
-        religion: validatedData.religion || null,
-        category: validatedData.category || null,
-        nationality: validatedData.nationality || "Indian",
-        aadharNumber: encryptedAadhar,
-        motherIncome: validatedData.motherIncome || null,
-        currentAddress: validatedData.currentAddress || null,
-        permanentAddress: validatedData.permanentAddress || null,
-        admissionClass: canonicalAdmissionClass,
-        currentClass: computedCurrentClass,
-        photoPath,
-        birthCertificatePath,
-        aadharCardPath,
-        transferCertificatePath,
-        parentPanCardPath: parentPanCardPath || null,
-        medicalConditions: validatedData.medicalConditions || null,
-        allergies: validatedData.allergies || null,
-        recordStatus: "PENDING", // Maker-Checker clearance queue
-        academicSessions: {
-          create: sessionsToCreate,
+    const cleanPermanentAddress = validatedData.permanentAddress || validatedData.address;
+    const cleanCurrentAddress = validatedData.currentAddress || cleanPermanentAddress;
+
+    // 3. Save to database using atomic Prisma transaction
+    const student = await prisma.$transaction(async (tx) => {
+      return await tx.student.create({
+        data: {
+          srNumber: normalizedSr,
+          firstName: validatedData.firstName.toUpperCase().trim(),
+          lastName: validatedData.lastName.toUpperCase().trim(),
+          dateOfBirth: new Date(validatedData.dateOfBirth),
+          gender: validatedData.gender,
+          bloodGroup: validatedData.bloodGroup || null,
+          distanceFromSchool: validatedData.distanceFromSchool
+            ? parseFloat(validatedData.distanceFromSchool)
+            : null,
+          religion: validatedData.religion || null,
+          category: validatedData.category || null,
+          nationality: validatedData.nationality || "Indian",
+          penNumber: validatedData.penNumber?.trim() || null,
+          apaarId: validatedData.apaarId?.trim() || null,
+          aadharNumber: encryptedAadhar,
+          motherIncome: validatedData.motherIncome || null,
+          currentAddress: cleanCurrentAddress || null,
+          permanentAddress: cleanPermanentAddress || null,
+          admissionDate: validatedData.admissionDate ? new Date(validatedData.admissionDate) : new Date(),
+          admissionSession,
+          admissionClass: canonicalAdmissionClass,
+          currentClass: computedCurrentClass,
+          photoPath,
+          birthCertificatePath,
+          aadharCardPath,
+          transferCertificatePath,
+          parentPanCardPath: parentPanCardPath || null,
+          medicalConditions: validatedData.medicalConditions || null,
+          allergies: validatedData.allergies || null,
+          recordStatus: "PENDING", // Maker-Checker clearance queue
+          academicSessions: {
+            create: sessionsToCreate,
+          },
+          parents: {
+            create: [
+              {
+                relationType: "Father",
+                firstName: validatedData.fatherName.split(" ")[0] || "",
+                lastName: validatedData.fatherName.split(" ").slice(1).join(" ") || "",
+                occupation: validatedData.fatherOccupation || null,
+                educationQualification: validatedData.fatherEducation || null,
+                phoneNumber: validatedData.fatherPhone || null,
+                annualIncome: validatedData.fatherIncome
+                  ? parseFloat(validatedData.fatherIncome)
+                  : null,
+                address: cleanPermanentAddress,
+                aadharNumber: encryptedFatherAadhar,
+                panNumber: encryptedPan,
+                panCardPath: parentPanCardPath || null,
+                fatherPhotoPath: fatherPhotoPath || parentPhotoPath || null,
+                parentPhotoPath: fatherPhotoPath || parentPhotoPath || null,
+              },
+              {
+                relationType: "Mother",
+                firstName: validatedData.motherName.split(" ")[0] || "",
+                lastName: validatedData.motherName.split(" ").slice(1).join(" ") || "",
+                occupation: validatedData.motherOccupation || null,
+                educationQualification: validatedData.motherEducation || null,
+                phoneNumber: validatedData.motherPhone || null,
+                annualIncome: validatedData.motherIncome && !isNaN(parseFloat(validatedData.motherIncome))
+                  ? parseFloat(validatedData.motherIncome)
+                  : null,
+                address: cleanPermanentAddress,
+                aadharNumber: encryptedMotherAadhar,
+                panNumber: encryptedPan,
+                panCardPath: parentPanCardPath || null,
+                motherPhotoPath: motherPhotoPath || parentPhotoPath || null,
+                parentPhotoPath: motherPhotoPath || parentPhotoPath || null,
+              },
+            ],
+          },
         },
-        parents: {
-          create: [
-            {
-              relationType: "Father",
-              firstName: validatedData.fatherName.split(" ")[0] || "",
-              lastName: validatedData.fatherName.split(" ").slice(1).join(" ") || "",
-              occupation: validatedData.fatherOccupation || null,
-              educationQualification: validatedData.fatherEducation || null,
-              phoneNumber: validatedData.fatherPhone || null,
-              annualIncome: validatedData.fatherIncome
-                ? parseFloat(validatedData.fatherIncome)
-                : null,
-              address: validatedData.address,
-              panNumber: encryptedPan,
-              panCardPath: parentPanCardPath || null,
-              fatherPhotoPath: fatherPhotoPath || parentPhotoPath || null,
-              parentPhotoPath: fatherPhotoPath || parentPhotoPath || null,
-            },
-            {
-              relationType: "Mother",
-              firstName: validatedData.motherName.split(" ")[0] || "",
-              lastName: validatedData.motherName.split(" ").slice(1).join(" ") || "",
-              occupation: validatedData.motherOccupation || null,
-              educationQualification: validatedData.motherEducation || null,
-              phoneNumber: validatedData.motherPhone || null,
-              annualIncome: validatedData.motherIncome
-                ? parseFloat(validatedData.motherIncome)
-                : null,
-              address: validatedData.address,
-              panNumber: encryptedPan,
-              panCardPath: parentPanCardPath || null,
-              motherPhotoPath: motherPhotoPath || parentPhotoPath || null,
-              parentPhotoPath: motherPhotoPath || parentPhotoPath || null,
-            },
-          ],
+        include: {
+          academicSessions: true,
+          parents: true,
         },
-      },
-      include: {
-        academicSessions: true,
-        parents: true,
-      },
+      });
     });
 
     // 4. Record audit log for Maker-Checker admission queue
@@ -395,13 +437,20 @@ export async function deleteStudentAction(srNumber: string, reason?: string) {
  */
 export async function updateStudentAction(formData: FormData) {
   try {
-    const srNumber = formData.get("srNumber")?.toString().trim().toUpperCase();
-    if (!srNumber) {
+    const rawSr = formData.get("srNumber")?.toString().trim();
+    if (!rawSr) {
       return { success: false, error: "Scholar Register Number is required." };
     }
+    const srNumber = rawSr.toUpperCase();
 
-    const existingStudent = await prisma.student.findUnique({
-      where: { srNumber },
+    const existingStudent = await prisma.student.findFirst({
+      where: {
+        OR: [
+          { srNumber },
+          { srNumber: rawSr },
+          { srNumber: rawSr.toLowerCase() },
+        ],
+      },
       include: {
         parents: true,
         academicSessions: { orderBy: { createdAt: "desc" } },
@@ -410,6 +459,13 @@ export async function updateStudentAction(formData: FormData) {
 
     if (!existingStudent) {
       return { success: false, error: `Student with S.R. Number "${srNumber}" not found.` };
+    }
+
+    if (existingStudent.recordStatus === "TC_ISSUED") {
+      return {
+        success: false,
+        error: "This student's Transfer Certificate has been issued. Their academic record is permanently frozen in the TC Register and cannot be modified.",
+      };
     }
 
     // Extract updated fields
@@ -427,12 +483,22 @@ export async function updateStudentAction(formData: FormData) {
     const distRaw = formData.get("distanceFromSchool")?.toString();
     const distanceFromSchool = distRaw ? parseFloat(distRaw) : existingStudent.distanceFromSchool;
 
-    // New expanded fields
-    const currentAddress = formData.get("currentAddress")?.toString().trim() || existingStudent.currentAddress;
-    const permanentAddress = formData.get("permanentAddress")?.toString().trim() || existingStudent.permanentAddress;
+    // Expanded Identifiers & Admission Tracking
+    const penNumberRaw = formData.get("penNumber")?.toString().trim();
+    const penNumber = penNumberRaw !== undefined ? (penNumberRaw || null) : existingStudent.penNumber;
+    const apaarIdRaw = formData.get("apaarId")?.toString().trim();
+    const admissionDateRaw = formData.get("admissionDate")?.toString();
+    const admissionDate = admissionDateRaw ? new Date(admissionDateRaw) : existingStudent.admissionDate;
+    const admissionClass = formData.get("admissionClass")?.toString().trim() || existingStudent.admissionClass;
+    const admissionSession = formData.get("admissionSession")?.toString().trim() || existingStudent.admissionSession;
+
+    // Address & Income
+    const permanentAddress = formData.get("permanentAddress")?.toString().trim() || formData.get("address")?.toString().trim() || existingStudent.permanentAddress;
+    const currentAddress = formData.get("currentAddress")?.toString().trim() || existingStudent.currentAddress || permanentAddress;
+    const address = permanentAddress || currentAddress || existingStudent.permanentAddress || "";
     const aadharNumberRaw = formData.get("aadharNumber")?.toString().trim();
     const motherIncomeRaw = formData.get("motherIncome")?.toString();
-    const motherIncome = motherIncomeRaw || existingStudent.motherIncome;
+    const motherIncome = motherIncomeRaw !== undefined ? motherIncomeRaw : existingStudent.motherIncome;
 
     // Parent information
     const fatherName = formData.get("fatherName")?.toString().trim();
@@ -441,13 +507,15 @@ export async function updateStudentAction(formData: FormData) {
     const fatherEducation = formData.get("fatherEducation")?.toString().trim();
     const fatherIncomeRaw = formData.get("fatherIncome")?.toString();
     const fatherIncome = fatherIncomeRaw ? parseFloat(fatherIncomeRaw) : undefined;
+    const fatherAadharRaw = formData.get("fatherAadhar")?.toString().trim();
 
     const motherName = formData.get("motherName")?.toString().trim();
     const motherPhone = formData.get("motherPhone")?.toString().trim();
     const motherOccupation = formData.get("motherOccupation")?.toString().trim();
     const motherEducation = formData.get("motherEducation")?.toString().trim();
+    const motherAadharRaw = formData.get("motherAadhar")?.toString().trim();
 
-    const address = formData.get("address")?.toString().trim();
+    const parentPanRaw = formData.get("parentPan")?.toString().trim();
     const className = formData.get("className")?.toString().trim();
     const sessionYear = formData.get("sessionYear")?.toString().trim();
 
@@ -472,26 +540,42 @@ export async function updateStudentAction(formData: FormData) {
         saveFile(formData.get("parentPanCard")),
       ]);
 
-      // Encrypt Aadhaar and APAAR if provided
+      // Encrypt sensitive identifiers
       const encryptedAadhar = aadharNumberRaw
         ? encryptData(aadharNumberRaw.replace(/\s/g, ""))
         : existingStudent.aadharNumber;
         
-      const apaarIdRaw = formData.get("apaarId")?.toString().trim();
-      const encryptedApaar = apaarIdRaw
-        ? encryptData(apaarIdRaw.replace(/\s/g, ""))
+      const encryptedApaar = apaarIdRaw !== undefined
+        ? (apaarIdRaw ? encryptData(apaarIdRaw.replace(/\s/g, "")) : null)
         : existingStudent.apaarId;
+
+      const encryptedFatherAadhar = fatherAadharRaw
+        ? encryptData(fatherAadharRaw.replace(/\s/g, ""))
+        : undefined;
+
+      const encryptedMotherAadhar = motherAadharRaw
+        ? encryptData(motherAadharRaw.replace(/\s/g, ""))
+        : undefined;
+
+      const encryptedPan = parentPanRaw
+        ? encryptData(parentPanRaw.toUpperCase())
+        : undefined;
 
       await prisma.$transaction(async (tx) => {
         await tx.student.update({
-          where: { srNumber },
+          where: { srNumber: existingStudent.srNumber },
           data: {
             firstName, lastName, dateOfBirth, gender, bloodGroup,
             distanceFromSchool, religion, category, nationality,
             medicalConditions, allergies,
             currentAddress, permanentAddress,
-            aadharNumber: encryptedAadhar,
+            penNumber,
             apaarId: encryptedApaar,
+            aadharNumber: encryptedAadhar,
+            admissionDate,
+            admissionClass,
+            admissionSession,
+            currentClass: className || existingStudent.currentClass,
             motherIncome,
             recordStatus: "APPROVED",
             photoPath: newPhoto || existingStudent.photoPath,
@@ -502,7 +586,7 @@ export async function updateStudentAction(formData: FormData) {
           },
         });
 
-        // Update Father
+        // Update or Create Father
         const father = existingStudent.parents.find((p) => p.relationType?.toLowerCase() === "father");
         if (father) {
           await tx.parent.update({
@@ -514,15 +598,36 @@ export async function updateStudentAction(formData: FormData) {
               occupation: fatherOccupation !== undefined ? fatherOccupation : father.occupation,
               educationQualification: fatherEducation !== undefined ? fatherEducation : father.educationQualification,
               annualIncome: fatherIncome !== undefined ? fatherIncome : father.annualIncome,
-              address: address !== undefined ? address : father.address,
+              address: address || father.address,
+              aadharNumber: encryptedFatherAadhar !== undefined ? encryptedFatherAadhar : father.aadharNumber,
+              panNumber: encryptedPan !== undefined ? encryptedPan : father.panNumber,
               panCardPath: newPanCard || father.panCardPath,
               fatherPhotoPath: newFatherPhoto || father.fatherPhotoPath,
               parentPhotoPath: newFatherPhoto || father.parentPhotoPath,
             },
           });
+        } else if (fatherName) {
+          await tx.parent.create({
+            data: {
+              studentSrNumber: existingStudent.srNumber,
+              relationType: "Father",
+              firstName: (fatherName || "").trim().split(" ")[0] || "Father",
+              lastName: (fatherName || "").trim().split(" ").slice(1).join(" ") || "",
+              phoneNumber: fatherPhone || null,
+              occupation: fatherOccupation || null,
+              educationQualification: fatherEducation || null,
+              annualIncome: fatherIncome || null,
+              address: address || null,
+              aadharNumber: encryptedFatherAadhar || null,
+              panNumber: encryptedPan || null,
+              panCardPath: newPanCard || null,
+              fatherPhotoPath: newFatherPhoto || null,
+              parentPhotoPath: newFatherPhoto || null,
+            },
+          });
         }
 
-        // Update Mother
+        // Update or Create Mother
         const mother = existingStudent.parents.find((p) => p.relationType?.toLowerCase() === "mother");
         if (mother) {
           await tx.parent.update({
@@ -533,18 +638,45 @@ export async function updateStudentAction(formData: FormData) {
               phoneNumber: motherPhone !== undefined ? motherPhone : mother.phoneNumber,
               occupation: motherOccupation !== undefined ? motherOccupation : mother.occupation,
               educationQualification: motherEducation !== undefined ? motherEducation : mother.educationQualification,
-              annualIncome: motherIncomeRaw ? parseFloat(motherIncomeRaw) : mother.annualIncome,
-              address: address !== undefined ? address : mother.address,
+              annualIncome: motherIncomeRaw && !isNaN(parseFloat(motherIncomeRaw)) ? parseFloat(motherIncomeRaw) : mother.annualIncome,
+              address: address || mother.address,
+              aadharNumber: encryptedMotherAadhar !== undefined ? encryptedMotherAadhar : mother.aadharNumber,
+              panNumber: encryptedPan !== undefined ? encryptedPan : mother.panNumber,
               panCardPath: newPanCard || mother.panCardPath,
               motherPhotoPath: newMotherPhoto || mother.motherPhotoPath,
               parentPhotoPath: newMotherPhoto || mother.parentPhotoPath,
             },
           });
+        } else if (motherName) {
+          await tx.parent.create({
+            data: {
+              studentSrNumber: existingStudent.srNumber,
+              relationType: "Mother",
+              firstName: (motherName || "").trim().split(" ")[0] || "Mother",
+              lastName: (motherName || "").trim().split(" ").slice(1).join(" ") || "",
+              phoneNumber: motherPhone || null,
+              occupation: motherOccupation || null,
+              educationQualification: motherEducation || null,
+              annualIncome: motherIncomeRaw && !isNaN(parseFloat(motherIncomeRaw)) ? parseFloat(motherIncomeRaw) : null,
+              address: address || null,
+              aadharNumber: encryptedMotherAadhar || null,
+              panNumber: encryptedPan || null,
+              panCardPath: newPanCard || null,
+              motherPhotoPath: newMotherPhoto || null,
+              parentPhotoPath: newMotherPhoto || null,
+            },
+          });
         }
 
-        // Update Academic Session
+        // Update Academic Session (Chronologically latest active session)
         if (className || sessionYear) {
-          const latestSession = existingStudent.academicSessions[0];
+          const sortedSessions = [...existingStudent.academicSessions].sort((a, b) => {
+            const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+            const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+            if (yA !== yB) return yB - yA;
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
+          const latestSession = sortedSessions[0];
           if (latestSession) {
             await tx.academicSession.update({
               where: { id: latestSession.id },
@@ -553,16 +685,25 @@ export async function updateStudentAction(formData: FormData) {
                 sessionYear: sessionYear || latestSession.sessionYear,
               },
             });
+          } else {
+            await tx.academicSession.create({
+              data: {
+                studentSrNumber: existingStudent.srNumber,
+                className: className || "Nursery - PP3",
+                sessionYear: sessionYear || "2026-2027",
+                resultStatus: "Enrolled",
+              },
+            });
           }
         }
       });
 
       await recordAuditLogAction({
         actionType: "DIRECTOR_STUDENT_UPDATED",
-        studentSrNumber: srNumber,
+        studentSrNumber: existingStudent.srNumber,
         prefix: "EDT-OK",
         details: {
-          studentSrNumber: srNumber,
+          studentSrNumber: existingStudent.srNumber,
           fullName: `${firstName} ${lastName}`,
           updatedBy: "Director (Executive Key)",
           status: "APPROVED_IMMEDIATELY",
@@ -570,7 +711,16 @@ export async function updateStudentAction(formData: FormData) {
         },
       });
 
-      revalidatePath(`/students/${encodeURIComponent(srNumber)}`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}/sr-front-page`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}/sr-back-page`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}/id-card`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}/transfer-certificate`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}/admission-form`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}/report-cards/pre-primary`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}/report-cards/lower-primary`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}/report-cards/mid-levels`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}/report-cards/class-ix`);
       revalidatePath("/directory");
       revalidatePath("/director-dashboard");
       revalidatePath("/registers/data-entry");
@@ -578,7 +728,7 @@ export async function updateStudentAction(formData: FormData) {
 
       return {
         success: true,
-        message: `Scholar "${srNumber}" (${firstName} ${lastName}) details updated immediately with Director Master Authorization.`,
+        message: `Scholar "${existingStudent.srNumber}" (${firstName} ${lastName}) details updated immediately with Director Master Authorization.`,
       };
     } else {
       // ═══════════════════════════════════════════════════════════════
@@ -600,7 +750,7 @@ export async function updateStudentAction(formData: FormData) {
         saveFileTmp(formData.get("parentPanCard")),
       ]);
 
-      // Build the proposed data JSON payload
+      // Build the proposed data JSON payload with all fields preserved
       const proposedData: Record<string, unknown> = {
         firstName, lastName,
         dateOfBirth: dobRaw || null,
@@ -608,11 +758,19 @@ export async function updateStudentAction(formData: FormData) {
         religion, category, nationality,
         medicalConditions, allergies,
         currentAddress, permanentAddress,
+        penNumber: penNumberRaw || null,
+        apaarId: apaarIdRaw || null,
         aadharNumber: aadharNumberRaw || null,
+        admissionDate: admissionDateRaw || null,
+        admissionClass: admissionClass || null,
+        admissionSession: admissionSession || null,
         motherIncome: motherIncomeRaw || null,
         fatherName, fatherPhone, fatherOccupation, fatherEducation,
         fatherIncome: fatherIncomeRaw || null,
+        fatherAadhar: fatherAadharRaw || null,
         motherName, motherPhone, motherOccupation, motherEducation,
+        motherAadhar: motherAadharRaw || null,
+        parentPan: parentPanRaw || null,
         address,
         className, sessionYear,
       };
@@ -630,7 +788,7 @@ export async function updateStudentAction(formData: FormData) {
       // Create staging request — live data stays UNTOUCHED
       await prisma.studentEditRequest.create({
         data: {
-          studentSrNumber: srNumber,
+          studentSrNumber: existingStudent.srNumber,
           proposedData: JSON.stringify(proposedData),
           attachedFiles: attachedFiles.length > 0 ? JSON.stringify(attachedFiles) : null,
           status: "PENDING",
@@ -640,10 +798,10 @@ export async function updateStudentAction(formData: FormData) {
 
       await recordAuditLogAction({
         actionType: "STUDENT_UPDATE_REQUESTED",
-        studentSrNumber: srNumber,
+        studentSrNumber: existingStudent.srNumber,
         prefix: "EDT-REQ",
         details: {
-          studentSrNumber: srNumber,
+          studentSrNumber: existingStudent.srNumber,
           fullName: `${firstName} ${lastName}`,
           updatedBy: "Staff Faculty",
           status: "PENDING_DIRECTOR_APPROVAL",
@@ -651,7 +809,7 @@ export async function updateStudentAction(formData: FormData) {
         },
       });
 
-      revalidatePath(`/students/${encodeURIComponent(srNumber)}`);
+      revalidatePath(`/students/${encodeURIComponent(existingStudent.srNumber)}`);
       revalidatePath("/directory");
       revalidatePath("/director-dashboard");
       revalidatePath("/approvals");
@@ -659,7 +817,7 @@ export async function updateStudentAction(formData: FormData) {
 
       return {
         success: true,
-        message: `Scholar "${srNumber}" (${firstName} ${lastName}) update request submitted to Director's Governance Desk for Maker-Checker approval. The live record remains unchanged until approved.`,
+        message: `Scholar "${existingStudent.srNumber}" (${firstName} ${lastName}) update request submitted to Director's Governance Desk for Maker-Checker approval. The live record remains unchanged until approved.`,
       };
     }
   } catch (error: unknown) {

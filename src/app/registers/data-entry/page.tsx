@@ -9,8 +9,11 @@ export const metadata: Metadata = {
 };
 
 export default async function AccumulativeRegisterPage() {
-  // Fetch all students with their academic sessions, marks, soft skills, and parents
+  // Fetch all enrolled active students with their academic sessions, marks, soft skills, and parents (excluding issued TCs)
   const students = await prisma.student.findMany({
+    where: {
+      recordStatus: { not: "TC_ISSUED" },
+    },
     include: {
       parents: true,
       academicSessions: {

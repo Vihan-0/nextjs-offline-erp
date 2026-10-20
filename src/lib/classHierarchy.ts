@@ -112,6 +112,30 @@ export function parseSessionStartYear(session: string): number | null {
 }
 
 /**
+ * Normalizes any session format into canonical "YYYY-YYYY" format.
+ * Examples:
+ *   "2026-27"   -> "2026-2027"
+ *   "2026-2027" -> "2026-2027"
+ *   "2026/27"   -> "2026-2027"
+ *   "2026"      -> "2026-2027"
+ */
+export function normalizeSessionYear(session?: string | null): string {
+  if (!session || typeof session !== "string") return CURRENT_SESSION;
+  const clean = session.trim();
+  const start = parseSessionStartYear(clean);
+  if (!start) return clean || CURRENT_SESSION;
+  return `${start}-${start + 1}`;
+}
+
+/**
+ * Compares two session strings for equivalence regardless of formatting ("2026-27" === "2026-2027").
+ */
+export function areSessionsEqual(s1?: string | null, s2?: string | null): boolean {
+  if (!s1 || !s2) return false;
+  return normalizeSessionYear(s1) === normalizeSessionYear(s2);
+}
+
+/**
  * Resolves any class name variant to its canonical index in MASTER_CLASS_HIERARCHY.
  * Returns -1 if not recognized.
  */
@@ -227,19 +251,32 @@ const PRE_PRIMARY_NURSERY = new Set(["NURSERY - PP3", "NURSERY", "PP3"]);
 const PRE_PRIMARY_LKG = new Set(["LKG - PP2", "LKG", "PP2", "L.K.G", "L.K.G."]);
 const PRE_PRIMARY_UKG = new Set(["UKG - PP1", "UKG", "PP1", "U.K.G", "U.K.G."]);
 
-const MID_LEVELS = new Set(["CLASS 6", "CLASS VI", "CLASS 7", "CLASS VII", "CLASS 8", "CLASS VIII", "CLASS 6", "CLASS 7", "CLASS 8", "CLASS-6", "CLASS-7", "CLASS-8"]);
-const SECONDARY = new Set(["CLASS 9", "CLASS IX", "CLASS 10", "CLASS X", "CLASS-9", "CLASS-10"]);
+const MID_LEVELS = new Set<string>();
+const SECONDARY = new Set<string>();
 
-// Build the sets from the hierarchy for mid/secondary
-for (let i = 6; i <= 8; i++) {
+// Build the sets from the hierarchy:
+// Mid-Levels: Class 3 through Class 8 (Classes III–VIII)
+for (let i = 3; i <= 8; i++) {
+  const roman = toRoman(i);
   MID_LEVELS.add(`CLASS ${i}`);
-  MID_LEVELS.add(`CLASS ${toRoman(i)}`);
+  MID_LEVELS.add(`CLASS ${roman}`);
   MID_LEVELS.add(`Class ${i}`);
+  MID_LEVELS.add(`CLASS-${i}`);
+  MID_LEVELS.add(`CLASS-${roman}`);
+  MID_LEVELS.add(`${i}`);
+  MID_LEVELS.add(roman);
 }
-for (let i = 9; i <= 10; i++) {
+
+// Secondary & Senior Secondary: Class 9 through Class 12 (Classes IX–XII)
+for (let i = 9; i <= 12; i++) {
+  const roman = toRoman(i);
   SECONDARY.add(`CLASS ${i}`);
-  SECONDARY.add(`CLASS ${toRoman(i)}`);
+  SECONDARY.add(`CLASS ${roman}`);
   SECONDARY.add(`Class ${i}`);
+  SECONDARY.add(`CLASS-${i}`);
+  SECONDARY.add(`CLASS-${roman}`);
+  SECONDARY.add(`${i}`);
+  SECONDARY.add(roman);
 }
 
 export interface ReportCardRouteInfo {
@@ -250,8 +287,80 @@ export interface ReportCardRouteInfo {
 }
 
 /**
+ * Standard Letter Grade Converter for Classes up to Class 2 (Nursery to Class 2).
+ * Brackets: 91-100% = A+, 81-90% = A, 71-80% = B+, 61-70% = B, 51-60% = C+, 41-50% = C, 33-40% = D, <33% = E
+ */
+export function convertScoreOrGradeToLetterGrade(
+  value: string | number | null | undefined,
+  maxMarks: number = 100
+): string {
+  if (value === null || value === undefined || value === "") return "";
+  const str = String(value).trim();
+  if (!str) return "";
+
+  const upper = str.toUpperCase();
+  if (["A+", "A", "B+", "B", "C+", "C", "D", "E"].includes(upper)) {
+    return upper;
+  }
+  if (upper === "A1") return "A+";
+  if (upper === "A2") return "A";
+  if (upper === "B1") return "B+";
+  if (upper === "B2") return "B";
+  if (upper === "C1") return "C+";
+  if (upper === "C2") return "C";
+  if (upper === "D1" || upper === "D2") return "D";
+  if (upper === "E1" || upper === "E2") return "E";
+
+  const num = typeof value === "number" ? value : parseFloat(str);
+  if (!isNaN(num)) {
+    const max = maxMarks > 0 ? maxMarks : 100;
+    const pct = (num / max) * 100;
+    if (pct >= 91) return "A+";
+    if (pct >= 81) return "A";
+    if (pct >= 71) return "B+";
+    if (pct >= 61) return "B";
+    if (pct >= 51) return "C+";
+    if (pct >= 41) return "C";
+    if (pct >= 33) return "D";
+    return "E";
+  }
+
+  return str;
+}
+
+/**
+ * Normalizes exam/term names to canonical 4-term keys: "term1" | "term2" | "term3" | "term4".
+ * Handles Term 1/I/UT1, Term 2/II/Half Yearly, Term 3/III/UT3, Term 4/IV/Annual.
+ * Order of evaluation protects against "I" matching in "II", "III", and "IV".
+ */
+export function normalizeTermKey(examType: string | null | undefined): "term1" | "term2" | "term3" | "term4" | null {
+  if (!examType) return null;
+  const t = examType.trim().toUpperCase();
+  // Check Term 4 / IV / Annual
+  if (t === "IV" || t === "TERM 4" || t === "TERM IV" || t === "ANNUAL" || t === "FINAL" || t === "T4" || /\b(iv|4|annual|final)\b/i.test(t)) {
+    return "term4";
+  }
+  // Check Term 3 / III / UT 3
+  if (t === "III" || t === "TERM 3" || t === "TERM III" || t === "UT3" || t === "T3" || /\b(iii|3)\b/i.test(t)) {
+    return "term3";
+  }
+  // Check Term 2 / II / Half Yearly / UT 2
+  if (t === "II" || t === "TERM 2" || t === "TERM II" || t === "HALF" || t === "HALF YEARLY" || t === "HALF-YEARLY" || t === "HY" || t === "T2" || /\b(ii|2|half)\b/i.test(t)) {
+    return "term2";
+  }
+  // Check Term 1 / I / UT 1
+  if (t === "I" || t === "TERM 1" || t === "TERM I" || t === "UT1" || t === "T1" || /\b(i|1)\b/i.test(t)) {
+    return "term1";
+  }
+  return null;
+}
+
+/**
  * Strict exact-match report card route resolver.
- * No substring matching — each pre-primary level maps independently.
+ * Pre-Primary: Nursery, LKG, UKG -> pre-primary
+ * Lower Primary: Class 1, Class 2 -> lower-primary (Grades only on Card)
+ * Upper Primary & Junior: Class 3 to Class 8 -> mid-levels (Numeric marks & grand totals)
+ * Secondary: Class 9 to Class 12 -> class-ix (Numeric marks & grand totals)
  */
 export function getReportCardRouteForClass(className: string): ReportCardRouteInfo {
   const norm = (className || "").toUpperCase().trim();
@@ -266,31 +375,31 @@ export function getReportCardRouteForClass(className: string): ReportCardRouteIn
     };
   }
 
-  // Mid-Levels (VI–VIII)
+  // Mid-Levels (Class 3 to Class 8 / III–VIII)
   if (MID_LEVELS.has(norm)) {
     return {
       route: "mid-levels",
-      label: "Junior Wing Progress Card (VI–VIII)",
-      badge: "Junior Section",
+      label: "Junior Wing Progress Card (III–VIII)",
+      badge: "Upper Primary & Junior Section",
       color: "bg-amber-950/60 text-amber-300 border-amber-800/60 hover:bg-amber-900/60",
     };
   }
 
-  // Secondary (IX–X)
+  // Secondary (Class 9 to Class 12 / IX–XII)
   if (SECONDARY.has(norm)) {
     return {
       route: "class-ix",
-      label: "Secondary Progress Card (IX–X)",
+      label: "Secondary Progress Card (IX–XII)",
       badge: "Secondary Board Standard",
       color: "bg-indigo-950/60 text-indigo-300 border-indigo-800/60 hover:bg-indigo-900/60",
     };
   }
 
-  // Default: Lower Primary (I–V)
+  // Default: Lower Primary (Class 1 & Class 2 / I–II)
   return {
     route: "lower-primary",
-    label: "Lower Primary Holistic Card (I–V)",
-    badge: "Primary Wing",
+    label: "Lower Primary Holistic Card (I–II)",
+    badge: "Primary Wing (Grades)",
     color: "bg-blue-950/60 text-blue-300 border-blue-800/60 hover:bg-blue-900/60",
   };
 }

@@ -425,7 +425,7 @@ export default async function Home() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
 
             {/* Doc 1: S.R. Front Folio */}
             <Link
@@ -567,6 +567,34 @@ export default async function Home() {
               </p>
             </Link>
 
+            {/* Doc 5: TC Register Archive */}
+            <Link
+              href="/tc-register"
+              className="p-5 rounded-2xl border shadow-xs hover:shadow-md transition-all group"
+              style={{ backgroundColor: "#ffffff", borderColor: "#fecdd3" }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors"
+                  style={{ backgroundColor: "#ffe4e6", color: "#9f1239" }}
+                >
+                  <Award className="w-5 h-5" />
+                </div>
+                <span
+                  className="text-[10px] font-bold px-2 py-0.5 rounded"
+                  style={{ backgroundColor: "#fff1f2", color: "#9f1239" }}
+                >
+                  TC Register
+                </span>
+              </div>
+              <h4 className="font-bold text-sm" style={{ color: "#0f172a" }}>
+                TC Register Archive
+              </h4>
+              <p className="text-[11px] mt-1 leading-relaxed" style={{ color: "#64748b" }}>
+                Official Transfer Certificate register, passed students archive &amp; record freeze vault.
+              </p>
+            </Link>
+
           </div>
         </section>
 
@@ -647,7 +675,7 @@ export default async function Home() {
                           </span>
                         </div>
                         <p className="text-xs" style={{ color: "#64748b" }}>
-                          Class: <strong style={{ color: "#1e293b" }}>{session?.className || "NURSERY"}</strong> • Father: <span style={{ color: "#1e293b" }}>{father ? `${father.firstName} ${father.lastName}`.trim() : "—"}</span>
+                          Class: <strong style={{ color: "#1e293b" }}>{student.currentClass || session?.className || student.admissionClass || "Nursery - PP3"}</strong> • Father: <span style={{ color: "#1e293b" }}>{father ? `${father.firstName} ${father.lastName}`.trim() : "—"}</span>
                         </p>
                       </div>
                     </div>

@@ -6,7 +6,7 @@ import {
   SaveAccumulativeMarksPayload,
   StudentAccumulativeEntry,
 } from "@/actions/saveAccumulativeMarks";
-import { resolveClassIndex } from "@/lib/classHierarchy";
+import { resolveClassIndex, areSessionsEqual, convertScoreOrGradeToLetterGrade } from "@/lib/classHierarchy";
 import { useReactToPrint } from "react-to-print";
 import Link from "next/link";
 import { PrintableMarksLedger } from "./PrintableMarksLedger";
@@ -218,7 +218,7 @@ export function AccumulativeRegisterGrid({
       const activeSession =
         student.sessions.find(
           (s) =>
-            s.sessionYear === selectedSessionYear &&
+            areSessionsEqual(s.sessionYear, selectedSessionYear) &&
             resolveClassIndex(s.className) === resolveClassIndex(selectedClass)
         ) || student.sessions[0];
 
@@ -291,7 +291,7 @@ export function AccumulativeRegisterGrid({
       const hasMatchingSession = student.sessions.some(
         (s) =>
           resolveClassIndex(s.className) === resolveClassIndex(selectedClass) &&
-          s.sessionYear === selectedSessionYear
+          areSessionsEqual(s.sessionYear, selectedSessionYear)
       );
 
       if (!hasMatchingSession) return false;
@@ -346,6 +346,61 @@ export function AccumulativeRegisterGrid({
     setSaveStatus({ type: null, message: "" });
 
     try {
+      // Pre-validation: ensure no negative marks and no marks exceed max
+      for (const st of Object.values(gridData) as any[]) {
+        if (st.marks) {
+          for (const [key, val] of Object.entries(st.marks as Record<string, any>)) {
+            const [subj, exam] = key.split("__");
+            const isUT = exam?.includes("Unit") || exam?.includes("UT");
+            const isHY = exam?.includes("Half") || exam?.includes("HY");
+            const maxForExam = isUT
+              ? exam?.includes("2")
+                ? maxMarksConfig.ut2Max
+                : maxMarksConfig.ut1Max
+              : isHY
+              ? maxMarksConfig.halfYearlyMax
+              : maxMarksConfig.annualMax;
+
+            const checkField = (v: any, fieldLabel: string, maxLimit?: number) => {
+              if (v === "" || v === undefined || v === null) return null;
+              if (typeof v === "string") {
+                const s = v.trim().toUpperCase();
+                if (s === "AB" || s === "ML" || s === "ABSENT" || s === "LEAVE" || s === "A+" || s === "A" || s === "B" || s === "C" || s === "D") return null;
+              }
+              const num = typeof v === "number" ? v : parseFloat(String(v).trim());
+              if (!isNaN(num)) {
+                if (num < 0) {
+                  return `${fieldLabel} for ${subj} cannot be negative (${num})`;
+                }
+                if (maxLimit !== undefined && num > maxLimit) {
+                  return `${fieldLabel} for ${subj} cannot exceed max marks (${maxLimit}, entered: ${num})`;
+                }
+              }
+              return null;
+            };
+
+            const errOral = checkField(val.oral, "Oral marks", maxMarksConfig.oralMax);
+            if (errOral) {
+              setSaveStatus({ type: "error", message: `Validation Error for ${st.fullName || st.srNumber}: ${errOral}` });
+              setIsSaving(false);
+              return;
+            }
+            const errWritten = checkField(val.written, "Written marks", maxMarksConfig.writtenMax);
+            if (errWritten) {
+              setSaveStatus({ type: "error", message: `Validation Error for ${st.fullName || st.srNumber}: ${errWritten}` });
+              setIsSaving(false);
+              return;
+            }
+            const errTotal = checkField(val.total, "Marks", maxForExam);
+            if (errTotal) {
+              setSaveStatus({ type: "error", message: `Validation Error for ${st.fullName || st.srNumber}: ${errTotal}` });
+              setIsSaving(false);
+              return;
+            }
+          }
+        }
+      }
+
       const studentEntries: StudentAccumulativeEntry[] = Object.values(gridData).map((st: any) => {
         // Flatten marks map back to array
         const markItems: {
@@ -364,13 +419,27 @@ export function AccumulativeRegisterGrid({
           Object.entries(st.marks).forEach(([key, val]: [string, any]) => {
             const [subjectName, examType] = key.split("__");
             if (subjectName && examType) {
-              const oral = val.oral !== "" && val.oral !== undefined ? parseFloat(val.oral) : null;
-              const written = val.written !== "" && val.written !== undefined ? parseFloat(val.written) : null;
+              const isNonNum = (v: any) => {
+                if (typeof v !== "string") return false;
+                const s = v.trim().toUpperCase();
+                return s === "AB" || s === "ML" || s === "ABSENT" || s === "LEAVE";
+              };
+
+              const parseScore = (v: any): number | null => {
+                if (v === "" || v === undefined || v === null || isNonNum(v)) return null;
+                const p = typeof v === "number" ? v : parseFloat(String(v).trim());
+                return isNaN(p) ? null : p;
+              };
+
+              const oral = parseScore(val.oral);
+              const written = parseScore(val.written);
+              const rawTotal = parseScore(val.total);
+
               const total =
-                val.total !== "" && val.total !== undefined
-                  ? parseFloat(val.total)
+                rawTotal !== null
+                  ? rawTotal
                   : oral !== null || written !== null
-                  ? (oral || 0) + (written || 0)
+                  ? (oral ?? 0) + (written ?? 0)
                   : null;
 
               const isUT = examType.includes("Unit") || examType.includes("UT");
@@ -383,16 +452,24 @@ export function AccumulativeRegisterGrid({
                 ? maxMarksConfig.halfYearlyMax
                 : maxMarksConfig.annualMax;
 
+              const nonNumCode = isNonNum(val.total)
+                ? String(val.total).trim().toUpperCase()
+                : isNonNum(val.written)
+                ? String(val.written).trim().toUpperCase()
+                : isNonNum(val.oral)
+                ? String(val.oral).trim().toUpperCase()
+                : null;
+
               markItems.push({
                 subjectName,
                 examType,
-                oralMarksObtained: isNaN(oral as number) ? null : oral,
+                oralMarksObtained: oral,
                 oralMaxMarks: oral !== null ? maxMarksConfig.oralMax : null,
-                writtenMarksObtained: isNaN(written as number) ? null : written,
+                writtenMarksObtained: written,
                 writtenMaxMarks: written !== null ? maxMarksConfig.writtenMax : null,
-                totalMarksObtained: isNaN(total as number) ? null : total,
+                totalMarksObtained: total,
                 totalMaxMarks: maxForExam,
-                grade: val.grade || null,
+                grade: nonNumCode || val.grade || null,
               });
             }
           });
@@ -1009,6 +1086,12 @@ function FormatAGridTable({
           <th className="px-2 py-2 border-r border-stone-300 min-w-[100px] bg-stone-50">
             (9) Quality HW
           </th>
+          <th className="px-2 py-2 border-r border-stone-300 min-w-[75px] bg-amber-50/70 text-amber-950 font-bold">
+            Total
+          </th>
+          <th className="px-2 py-2 border-r border-stone-300 min-w-[80px] bg-amber-50/70 text-amber-950 font-bold">
+            % & Grade
+          </th>
           <th colSpan={2} className="px-2 py-2 border-r border-stone-300 min-w-[130px] bg-stone-50">
             (10) Attendance (Meetings)
           </th>
@@ -1066,6 +1149,9 @@ function FormatAGridTable({
           <th className="px-1.5 py-1 border-r border-stone-200" />
           <th className="px-1.5 py-1 border-r border-stone-200" />
           <th className="px-1.5 py-1 border-r border-stone-200" />
+          {/* Total & Grade */}
+          <th className="px-1.5 py-1 border-r border-stone-200 bg-amber-50/50 text-amber-900 font-bold">Obt / Max</th>
+          <th className="px-1.5 py-1 border-r border-stone-300 bg-amber-50/50 text-amber-900 font-bold">% (Grade)</th>
           {/* Attendance */}
           <th className="px-1.5 py-1 border-r border-stone-200 min-w-[65px]">Present</th>
           <th className="px-1.5 py-1 border-r border-stone-300 min-w-[65px]">Total</th>
@@ -1096,6 +1182,40 @@ function FormatAGridTable({
             const setMark = (subj: string, field: "oral" | "written" | "total" | "grade", val: any) => {
               onCellChange(st.srNumber, `marks.${subj}__${termKey}.${field}`, val);
             };
+
+            // Calculate Format A Row Total & Grade in real-time
+            const formatASubjectKeys = [
+              "English - Literature",
+              "English - Language",
+              "English - Writing / Dictation",
+              "English - Reading / Recitation",
+              "Hindi - Literature",
+              "Hindi - Language",
+              "Hindi - Writing / Dictation",
+              "Hindi - Reading / Recitation",
+              "Mathematics - Logic and calculation",
+              "Mathematics - Mental ability",
+              "Mathematics - Oral",
+              "Environmental Education - Written",
+              "Environmental Education - Oral",
+              "General Awareness - Written",
+              "General Awareness - Oral",
+              "Computer - Theory/Practical",
+              "Art & Craft",
+              "PT/Game",
+            ];
+            let rowTotal = 0;
+            let subjectsCounted = 0;
+            formatASubjectKeys.forEach((key) => {
+              const val = row.marks?.[`${key}__${termKey}`]?.total;
+              if (val !== undefined && val !== "" && !isNaN(parseFloat(val))) {
+                rowTotal += parseFloat(val);
+                subjectsCounted += 1;
+              }
+            });
+            const totalMax = subjectsCounted * 100;
+            const pct = totalMax > 0 ? ((rowTotal / totalMax) * 100).toFixed(1) : "—";
+            const rowGrade = pct !== "—" ? convertScoreOrGradeToLetterGrade(pct) : "—";
 
             return (
               <tr key={st.srNumber} className="hover:bg-blue-50/30 transition-colors">
@@ -1249,6 +1369,26 @@ function FormatAGridTable({
                     onChange={(v) => setMark("Quality of Home Work", "total", v)}
                     placeholder="A+ / Good"
                   />
+                </td>
+
+                {/* Total */}
+                <td className="p-1.5 border-r border-stone-200 text-center font-mono font-bold text-stone-900 bg-amber-50/40">
+                  {subjectsCounted > 0 ? (
+                    <div className="flex flex-col items-center">
+                      <span>{rowTotal}</span>
+                      <span className="text-[9.5px] text-stone-400 font-normal">/ {totalMax}</span>
+                    </div>
+                  ) : "—"}
+                </td>
+
+                {/* Percentage & Grade */}
+                <td className="p-1.5 border-r border-stone-300 text-center font-mono font-bold text-[#0f2e60] bg-amber-50/40">
+                  {pct !== "—" ? (
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span>{pct}%</span>
+                      <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">{rowGrade}</span>
+                    </div>
+                  ) : "—"}
                 </td>
 
                 {/* (10) Attendance Single Meetings */}
@@ -2233,16 +2373,29 @@ function GridInput({
   placeholder?: string;
 }) {
   const num = typeof value === "number" ? value : parseFloat(String(value));
+  const isNegative = !isNaN(num) && num < 0;
   const isOverMax = max !== undefined && !isNaN(num) && num > max;
+  const isInvalid = isNegative || isOverMax;
 
   return (
     <div className="relative">
       <input
         type="text"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          const val = e.target.value;
+          if (val.includes("-")) return;
+          onChange(val);
+        }}
+        title={
+          isNegative
+            ? "Marks cannot be negative"
+            : isOverMax
+            ? `Marks cannot exceed max marks (${max})`
+            : undefined
+        }
         className={`w-full text-center text-xs font-mono py-1 px-1 border rounded transition-colors focus:outline-none ${
-          isOverMax
+          isInvalid
             ? "border-red-500 bg-red-50 text-red-800 font-bold ring-1 ring-red-400"
             : "border-stone-200 bg-white hover:border-stone-400 focus:border-[#0f2e60] focus:ring-1 focus:ring-[#0f2e60]"
         }`}

@@ -8,6 +8,7 @@ import {
   generateDeterministicTraceCode,
   generateVerificationQRDataUrl,
 } from "@/lib/document-security";
+import { parseSessionStartYear } from "@/lib/classHierarchy";
 import { AlertCircle, ArrowLeft, PlusCircle } from "lucide-react";
 
 interface PageProps {
@@ -203,20 +204,33 @@ export default async function SRFrontPageServer({ params }: PageProps) {
     : "—";
 
   const residentialAddress =
+    student.permanentAddress ||
+    student.currentAddress ||
     student.parents.find((p) => p.address)?.address ||
     primaryParent?.address ||
     "Not Specified";
 
-  // Decrypt and Mask Parent PAN Number
+  // Decrypt Credentials
   const rawEncryptedPan = father?.panNumber || mother?.panNumber || primaryParent?.panNumber;
   const decryptedPan = rawEncryptedPan ? decryptData(rawEncryptedPan) : null;
   const parentPanMasked = decryptedPan ? maskPanNumber(decryptedPan) : "—";
   const parentPhotoPath = father?.parentPhotoPath || mother?.parentPhotoPath || primaryParent?.parentPhotoPath || null;
 
-  // Initial Enrollment Session
-  const firstSession = student.academicSessions[0];
-  const admissionClass = firstSession?.className || "NURSERY";
-  const sessionYear = firstSession?.sessionYear || "2026-2027";
+  const decryptedStudentAadhar = student.aadharNumber ? decryptData(student.aadharNumber) : null;
+  const decryptedFatherAadhar = father?.aadharNumber ? decryptData(father.aadharNumber) : null;
+  const decryptedMotherAadhar = mother?.aadharNumber ? decryptData(mother.aadharNumber) : null;
+
+  // Initial Enrollment Session & Class (Oldest first)
+  const sortedSessions = [...student.academicSessions].sort((a, b) => {
+    const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+    const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+    if (yA !== yB) return yA - yB;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+  const firstSession = sortedSessions[0];
+  const admissionClass = student.admissionClass || firstSession?.className || "Nursery - PP3";
+  const sessionYear = student.admissionSession || firstSession?.sessionYear || "2026-2027";
+  const admissionDateFormatted = formatDateFormatted(student.admissionDate || student.createdAt);
 
   // Deterministic Cryptographic Anti-Tamper Trace Code
   const traceCode = generateDeterministicTraceCode(
@@ -258,7 +272,7 @@ export default async function SRFrontPageServer({ params }: PageProps) {
 
   const frontPageData: SRFrontPageData = {
     srNumber: student.srNumber,
-    admissionDateFormatted: formatDateFormatted(student.createdAt),
+    admissionDateFormatted,
     admissionClass,
     sessionYear,
     studentName: `${student.firstName} ${student.lastName}`.trim(),
@@ -270,6 +284,9 @@ export default async function SRFrontPageServer({ params }: PageProps) {
     category: student.category || undefined,
     nationality: student.nationality || "Indian",
     distanceFromSchool: student.distanceFromSchool || undefined,
+    studentAadharNumber: decryptedStudentAadhar ? decryptedStudentAadhar.replace(/(\d{4})(?=\d)/g, "$1 ") : undefined,
+    studentPenNumber: student.penNumber || undefined,
+    studentApaarId: student.apaarId || undefined,
     photoPath: student.photoPath,
 
     fatherName,
@@ -277,11 +294,13 @@ export default async function SRFrontPageServer({ params }: PageProps) {
     fatherOccupation: father?.occupation || undefined,
     fatherIncome: father?.annualIncome || undefined,
     fatherPhone: father?.phoneNumber || undefined,
+    fatherAadhar: decryptedFatherAadhar || undefined,
 
     motherName,
     motherQualification: mother?.educationQualification || undefined,
     motherOccupation: mother?.occupation || undefined,
     motherPhone: mother?.phoneNumber || undefined,
+    motherAadhar: decryptedMotherAadhar || undefined,
 
     parentPanMasked,
     parentPhotoPath,

@@ -27,13 +27,7 @@ export default async function StudentReportCardDispatcherPage({ params }: PagePr
     redirect(`/students/${encodeURIComponent(cleanSr)}`);
   }
 
-  const className = student.academicSessions[0]?.className?.toUpperCase() || "CLASS V";
-
-  const reportCardPath = getReportCardPathForClass(className);
-  
-  if (reportCardPath) {
-    redirect(`/students/${encodeURIComponent(cleanSr)}${reportCardPath}`);
-  } else {
-    redirect(`/students/${encodeURIComponent(cleanSr)}`);
-  }
+  const activeClass = student.currentClass || student.academicSessions[0]?.className || "Nursery - PP3";
+  const reportCard = getReportCardPathForClass(activeClass);
+  redirect(`/students/${encodeURIComponent(cleanSr)}/report-cards/${reportCard.path}`);
 }

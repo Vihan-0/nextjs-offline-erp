@@ -68,17 +68,26 @@ export function encryptData(text: string): string {
  */
 export function decryptData(hash: string): string {
   if (!hash || typeof hash !== 'string') {
-    return hash;
+    return hash || '';
   }
 
   const parts = hash.split(':');
   if (parts.length !== 2) {
-    // If not encrypted or in invalid format, return input as fallback
+    // If not encrypted or in plain-text format, return input as safe fallback
+    return hash;
+  }
+
+  const [ivHex, encryptedText] = parts;
+  // Ensure IV is exactly 32 hex characters (16 bytes) and both parts are valid hex
+  if (
+    ivHex.length !== IV_LENGTH * 2 ||
+    !/^[0-9a-fA-F]{32}$/.test(ivHex) ||
+    !/^[0-9a-fA-F]+$/.test(encryptedText)
+  ) {
     return hash;
   }
 
   try {
-    const [ivHex, encryptedText] = parts;
     const iv = Buffer.from(ivHex, 'hex');
     const key = getEncryptionKey();
 
@@ -87,8 +96,8 @@ export function decryptData(hash: string): string {
     decrypted += decipher.final('utf8');
 
     return decrypted;
-  } catch (error) {
-    console.error('Failed to decrypt data payload:', error);
+  } catch {
+    // On any decryption failure, return original hash as graceful fallback
     return hash;
   }
 }

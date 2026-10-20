@@ -1,5 +1,6 @@
 import React from 'react';
 import Image from 'next/image';
+import { convertScoreOrGradeToLetterGrade } from '@/lib/classHierarchy';
 
 export interface LowerPrimaryReportCardData {
   srNumber: string;
@@ -117,15 +118,15 @@ export function LowerPrimaryReportCard({
   const branch = data.branch || 'MAIN BRANCH';
   const aadhaarNo = data.aadhaarNo || '—';
   const schoolReopenOn = data.schoolReopenOn || '01.07.2026';
-  const attendance = data.attendance || '188 / 198 Days (95%)';
+  const attendance = data.attendance || '—';
   const passedAndPromotedToClass =
-    data.passedAndPromotedToClass || 'CLASS III';
+    data.passedAndPromotedToClass || '—';
   const teacherRemark =
-    data.teacherRemark ||
-    'CONFIDENT, ENERGETIC & OUTSTANDING OVERALL PERFORMANCE';
+    data.teacherRemark || '—';
 
   const getTermGrade = (key: string, term: 'term1' | 'term2' | 'term3' | 'term4') => {
-    return data.assessments?.[key]?.[term] || '';
+    const val = data.assessments?.[key]?.[term] || '';
+    return convertScoreOrGradeToLetterGrade(val);
   };
 
   return (

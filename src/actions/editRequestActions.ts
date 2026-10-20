@@ -6,6 +6,9 @@ import { recordAuditLogAction } from "./audit";
 import { encryptData } from "@/lib/encryption";
 import path from "path";
 import fs from "fs/promises";
+import crypto from "crypto";
+import { parseSessionStartYear } from "@/lib/classHierarchy";
+import { generateTCNumber } from "./tcActions";
 
 /**
  * Fetches all PENDING edit requests with student details for the Director's approval page.
@@ -52,7 +55,7 @@ export async function approveEditRequest(requestId: string) {
         student: {
           include: {
             parents: true,
-            academicSessions: { orderBy: { createdAt: "desc" }, take: 1 },
+            academicSessions: { orderBy: [{ sessionYear: "desc" }, { createdAt: "desc" }], take: 1 },
           },
         },
       },
@@ -83,10 +86,25 @@ export async function approveEditRequest(requestId: string) {
       }
     }
 
-    // Encrypt Aadhaar if provided
+    // Encrypt Aadhaar & PAN if provided
     const aadharRaw = proposed.aadharNumber as string | null;
     const encryptedAadhar = aadharRaw
       ? encryptData(aadharRaw.replace(/\s/g, ""))
+      : undefined;
+
+    const fatherAadharRaw = proposed.fatherAadhar as string | null;
+    const encryptedFatherAadhar = fatherAadharRaw
+      ? encryptData(fatherAadharRaw.replace(/\s/g, ""))
+      : undefined;
+
+    const motherAadharRaw = proposed.motherAadhar as string | null;
+    const encryptedMotherAadhar = motherAadharRaw
+      ? encryptData(motherAadharRaw.replace(/\s/g, ""))
+      : undefined;
+
+    const parentPanRaw = proposed.parentPan as string | null;
+    const encryptedParentPan = parentPanRaw
+      ? encryptData(parentPanRaw.replace(/\s/g, "").toUpperCase())
       : undefined;
 
     // Build student update data from proposed fields
@@ -97,6 +115,7 @@ export async function approveEditRequest(requestId: string) {
       "religion", "category", "nationality",
       "medicalConditions", "allergies",
       "currentAddress", "permanentAddress",
+      "penNumber", "apaarId", "admissionClass", "admissionSession", "currentClass",
     ];
 
     for (const field of directFields) {
@@ -105,8 +124,21 @@ export async function approveEditRequest(requestId: string) {
       }
     }
 
+    if (proposed.className || proposed.currentClass) {
+      studentUpdate.currentClass = (proposed.className || proposed.currentClass) as string;
+    }
+
     if (proposed.dateOfBirth) {
-      studentUpdate.dateOfBirth = new Date(proposed.dateOfBirth as string);
+      const parsedDob = new Date(proposed.dateOfBirth as string);
+      if (!isNaN(parsedDob.getTime())) {
+        studentUpdate.dateOfBirth = parsedDob;
+      }
+    }
+    if (proposed.admissionDate) {
+      const parsedAdm = new Date(proposed.admissionDate as string);
+      if (!isNaN(parsedAdm.getTime())) {
+        studentUpdate.admissionDate = parsedAdm;
+      }
     }
     if (proposed.distanceFromSchool !== undefined && proposed.distanceFromSchool !== null) {
       studentUpdate.distanceFromSchool = parseFloat(proposed.distanceFromSchool as string);
@@ -115,7 +147,13 @@ export async function approveEditRequest(requestId: string) {
       studentUpdate.aadharNumber = encryptedAadhar;
     }
     if (proposed.motherIncome !== undefined && proposed.motherIncome !== null) {
-      studentUpdate.motherIncome = parseFloat(proposed.motherIncome as string);
+      studentUpdate.motherIncome = String(proposed.motherIncome);
+    }
+
+    // Address sync fallback
+    if (proposed.address) {
+      if (!studentUpdate.currentAddress) studentUpdate.currentAddress = proposed.address;
+      if (!studentUpdate.permanentAddress) studentUpdate.permanentAddress = proposed.address;
     }
 
     // Apply file paths from moved files
@@ -175,7 +213,11 @@ export async function approveEditRequest(requestId: string) {
       }
 
       await prisma.$transaction(async (tx) => {
+        const addedSessions: { sessionYear: string; className: string }[] = [];
         if (proposed.sessionsToCreate && Array.isArray(proposed.sessionsToCreate)) {
+          for (const s of proposed.sessionsToCreate as any[]) {
+            addedSessions.push({ sessionYear: s.sessionYear, className: s.className });
+          }
           await tx.academicSession.createMany({
             data: proposed.sessionsToCreate.map((s: any) => ({
               studentSrNumber: srNumber,
@@ -184,12 +226,52 @@ export async function approveEditRequest(requestId: string) {
             })),
           });
         } else {
+          addedSessions.push({ sessionYear, className });
           await tx.academicSession.create({
             data: {
               studentSrNumber: srNumber,
               sessionYear,
               className,
             },
+          });
+        }
+
+        // Dynamic currentClass & admissionClass recalculation
+        const allSessions = [
+          ...student.academicSessions,
+          ...addedSessions,
+        ].sort((a, b) => {
+          const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+          const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+          return yA - yB;
+        });
+
+        const earliest = allSessions[0];
+        const latest = allSessions[allSessions.length - 1];
+
+        const updateData: {
+          admissionSession?: string;
+          admissionClass?: string;
+          currentClass?: string;
+        } = {};
+
+        if (earliest) {
+          const currentAdmYear = parseSessionStartYear(student.admissionSession || "") ?? Infinity;
+          const earliestYear = parseSessionStartYear(earliest.sessionYear) ?? Infinity;
+          if (earliestYear < currentAdmYear || !student.admissionSession) {
+            updateData.admissionSession = earliest.sessionYear;
+            updateData.admissionClass = earliest.className;
+          }
+        }
+
+        if (latest) {
+          updateData.currentClass = latest.className;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await tx.student.update({
+            where: { srNumber },
+            data: updateData,
           });
         }
 
@@ -217,14 +299,135 @@ export async function approveEditRequest(requestId: string) {
       });
 
       revalidatePath(`/students/${encodeURIComponent(srNumber)}`);
+      revalidatePath(`/students/${encodeURIComponent(srNumber)}/sr-back-page`);
+      revalidatePath(`/students/${encodeURIComponent(srNumber)}/transfer-certificate`);
       revalidatePath("/registers/data-entry");
       revalidatePath("/director-dashboard");
       revalidatePath("/approvals");
+      revalidatePath("/directory");
       revalidatePath("/");
 
       return {
         success: true,
         message: `Historical session ${sessionYear} (${className}) approved and added for Scholar "${srNumber}".`,
+      };
+    }
+
+    if (request.changeType === "ISSUE_TC" || proposed._editType === "ISSUE_TC") {
+      const leavingDate = proposed.leavingDate ? new Date(proposed.leavingDate as string) : new Date();
+      const leavingClass = (proposed.leavingClass as string) || student.currentClass || "Class 1";
+      const reasonForLeaving = (proposed.reasonForLeaving as string) || "Parent's Request";
+      const conduct = (proposed.conduct as string) || "Good";
+      const promotedTo = (proposed.promotedTo as string) || null;
+      const feeDuesStatus = (proposed.feeDuesStatus as string) || "NIL";
+      const remarks = (proposed.remarks as string) || null;
+
+      const father = student.parents.find((p) => p.relationType?.toLowerCase() === "father");
+      const mother = student.parents.find((p) => p.relationType?.toLowerCase() === "mother");
+      const studentName = `${student.firstName} ${student.lastName}`.trim();
+      const fatherName = father ? `${father.firstName} ${father.lastName}`.trim() : "—";
+      const motherName = mother ? `${mother.firstName} ${mother.lastName}`.trim() : null;
+
+      const admissionDate = student.admissionDate || (student.academicSessions[0] ? new Date(student.academicSessions[0].createdAt) : null);
+      const admissionClass = student.admissionClass || student.academicSessions[0]?.className || null;
+
+      const admYear = admissionDate ? admissionDate.getFullYear() : leavingDate.getFullYear();
+      const leavYear = leavingDate.getFullYear();
+      const diffYears = Math.max(0, leavYear - admYear);
+      const yearsStudied = (proposed.yearsStudied as string) || `${admYear} – ${leavYear} (${diffYears} ${diffYears === 1 ? "Year" : "Years"})`;
+
+      const tcNumber = (proposed.tcNumber as string) || (await generateTCNumber(leavYear));
+      const traceCode = (proposed.traceCode as string) || `TC-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+
+      await prisma.$transaction(async (tx) => {
+        const existingTC = await tx.transferCertificateRecord.findUnique({
+          where: { tcNumber },
+        });
+
+        if (existingTC) {
+          await tx.transferCertificateRecord.update({
+            where: { id: existingTC.id },
+            data: {
+              leavingClass,
+              leavingDate,
+              reasonForLeaving,
+              conduct,
+              promotedTo,
+              feeDuesStatus,
+              remarks,
+              status: "ISSUED",
+            },
+          });
+        } else {
+          await tx.transferCertificateRecord.create({
+            data: {
+              studentSrNumber: srNumber,
+              tcNumber,
+              studentName,
+              fatherName,
+              motherName,
+              admissionClass,
+              leavingClass,
+              admissionDate,
+              leavingDate,
+              yearsStudied,
+              issuedBy: "Director",
+              reasonForLeaving,
+              conduct,
+              promotedTo,
+              feeDuesStatus,
+              remarks,
+              traceCode,
+              status: "ISSUED",
+            },
+          });
+        }
+
+        // Freeze student record permanently
+        await tx.student.update({
+          where: { srNumber },
+          data: { recordStatus: "TC_ISSUED" },
+        });
+
+        // Mark edit request as APPROVED
+        await tx.studentEditRequest.update({
+          where: { id: requestId },
+          data: {
+            status: "APPROVED",
+            reviewedAt: new Date(),
+          },
+        });
+      });
+
+      await recordAuditLogAction({
+        actionType: "ISSUE_TC",
+        studentSrNumber: srNumber,
+        prefix: "TC",
+        details: {
+          requestId,
+          tcNumber,
+          leavingClass,
+          leavingDate: leavingDate.toISOString(),
+          promotedTo: promotedTo || "—",
+          feeDuesStatus: feeDuesStatus || "NIL",
+          status: "TC_ISSUED_FROZEN",
+          approvedBy: "Director (Executive Key)",
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      revalidatePath(`/students/${encodeURIComponent(srNumber)}`);
+      revalidatePath(`/students/${encodeURIComponent(srNumber)}/transfer-certificate`);
+      revalidatePath("/tc-register");
+      revalidatePath("/directory");
+      revalidatePath("/registers/data-entry");
+      revalidatePath("/approvals");
+      revalidatePath("/director-dashboard");
+      revalidatePath("/");
+
+      return {
+        success: true,
+        message: `Transfer Certificate ${tcNumber} approved & issued for Scholar "${srNumber}". Student record is now permanently frozen in TC Register.`,
       };
     }
 
@@ -235,57 +438,113 @@ export async function approveEditRequest(requestId: string) {
         data: studentUpdate,
       });
 
-      // 2. Update Father if fields provided
+      // 2. Update or Upsert Father if fields provided
       const father = student.parents.find((p) => p.relationType?.toLowerCase() === "father");
-      if (father && proposed.fatherName) {
-        const fatherName = proposed.fatherName as string;
+      const effectiveFatherAddress = (proposed.permanentAddress || proposed.currentAddress || proposed.address) as string;
+      if (father) {
+        const fatherName = proposed.fatherName ? (proposed.fatherName as string) : undefined;
         await tx.parent.update({
           where: { id: father.id },
           data: {
-            firstName: fatherName.split(" ")[0] || father.firstName,
-            lastName: fatherName.split(" ").slice(1).join(" ") || father.lastName,
-            phoneNumber: proposed.fatherPhone as string || father.phoneNumber,
-            occupation: proposed.fatherOccupation as string || father.occupation,
-            educationQualification: proposed.fatherEducation as string || father.educationQualification,
-            annualIncome: proposed.fatherIncome ? parseFloat(proposed.fatherIncome as string) : father.annualIncome,
-            address: proposed.address as string || father.address,
+            firstName: fatherName ? (fatherName.split(" ")[0] || father.firstName) : father.firstName,
+            lastName: fatherName ? (fatherName.split(" ").slice(1).join(" ") || father.lastName) : father.lastName,
+            phoneNumber: (proposed.fatherPhone as string) || father.phoneNumber,
+            occupation: (proposed.fatherOccupation as string) || father.occupation,
+            educationQualification: (proposed.fatherEducation as string) || father.educationQualification,
+            annualIncome: proposed.fatherIncome ? (isNaN(parseFloat(String(proposed.fatherIncome))) ? null : parseFloat(String(proposed.fatherIncome))) : father.annualIncome,
+            address: effectiveFatherAddress || father.address,
+            aadharNumber: encryptedFatherAadhar !== undefined ? encryptedFatherAadhar : father.aadharNumber,
+            panNumber: encryptedParentPan !== undefined ? encryptedParentPan : father.panNumber,
             panCardPath: movedFiles.parentPanCardPath || father.panCardPath,
             fatherPhotoPath: movedFiles.fatherPhotoPath || father.fatherPhotoPath,
             parentPhotoPath: movedFiles.fatherPhotoPath || father.parentPhotoPath,
           },
         });
+      } else if (proposed.fatherName || proposed.fatherPhone || proposed.fatherAadhar) {
+        const fatherName = (proposed.fatherName as string) || "Father";
+        await tx.parent.create({
+          data: {
+            studentSrNumber: srNumber,
+            relationType: "FATHER",
+            firstName: fatherName.split(" ")[0] || "Father",
+            lastName: fatherName.split(" ").slice(1).join(" ") || "",
+            phoneNumber: (proposed.fatherPhone as string) || "",
+            occupation: (proposed.fatherOccupation as string) || "",
+            educationQualification: (proposed.fatherEducation as string) || "",
+            annualIncome: proposed.fatherIncome ? (isNaN(parseFloat(String(proposed.fatherIncome))) ? null : parseFloat(String(proposed.fatherIncome))) : null,
+            address: effectiveFatherAddress || "",
+            aadharNumber: encryptedFatherAadhar || null,
+            panNumber: encryptedParentPan || null,
+            panCardPath: movedFiles.parentPanCardPath || null,
+            fatherPhotoPath: movedFiles.fatherPhotoPath || null,
+            parentPhotoPath: movedFiles.fatherPhotoPath || null,
+          },
+        });
       }
 
-      // 3. Update Mother if fields provided
+      // 3. Update or Upsert Mother if fields provided
       const mother = student.parents.find((p) => p.relationType?.toLowerCase() === "mother");
-      if (mother && proposed.motherName) {
-        const motherName = proposed.motherName as string;
+      const effectiveMotherAddress = (proposed.permanentAddress || proposed.currentAddress || proposed.address) as string;
+      if (mother) {
+        const motherName = proposed.motherName ? (proposed.motherName as string) : undefined;
         await tx.parent.update({
           where: { id: mother.id },
           data: {
-            firstName: motherName.split(" ")[0] || mother.firstName,
-            lastName: motherName.split(" ").slice(1).join(" ") || mother.lastName,
-            phoneNumber: proposed.motherPhone as string || mother.phoneNumber,
-            occupation: proposed.motherOccupation as string || mother.occupation,
-            educationQualification: proposed.motherEducation as string || mother.educationQualification,
-            annualIncome: proposed.motherIncome ? parseFloat(proposed.motherIncome as string) : mother.annualIncome,
-            address: proposed.address as string || mother.address,
+            firstName: motherName ? (motherName.split(" ")[0] || mother.firstName) : mother.firstName,
+            lastName: motherName ? (motherName.split(" ").slice(1).join(" ") || mother.lastName) : mother.lastName,
+            phoneNumber: (proposed.motherPhone as string) || mother.phoneNumber,
+            occupation: (proposed.motherOccupation as string) || mother.occupation,
+            educationQualification: (proposed.motherEducation as string) || mother.educationQualification,
+            annualIncome: proposed.motherIncome ? (isNaN(parseFloat(String(proposed.motherIncome))) ? null : parseFloat(String(proposed.motherIncome))) : mother.annualIncome,
+            address: effectiveMotherAddress || mother.address,
+            aadharNumber: encryptedMotherAadhar !== undefined ? encryptedMotherAadhar : mother.aadharNumber,
+            panNumber: encryptedParentPan !== undefined ? encryptedParentPan : mother.panNumber,
             panCardPath: movedFiles.parentPanCardPath || mother.panCardPath,
             motherPhotoPath: movedFiles.motherPhotoPath || mother.motherPhotoPath,
             parentPhotoPath: movedFiles.motherPhotoPath || mother.parentPhotoPath,
+          },
+        });
+      } else if (proposed.motherName || proposed.motherPhone || proposed.motherAadhar) {
+        const motherName = (proposed.motherName as string) || "Mother";
+        await tx.parent.create({
+          data: {
+            studentSrNumber: srNumber,
+            relationType: "MOTHER",
+            firstName: motherName.split(" ")[0] || "Mother",
+            lastName: motherName.split(" ").slice(1).join(" ") || "",
+            phoneNumber: (proposed.motherPhone as string) || "",
+            occupation: (proposed.motherOccupation as string) || "",
+            educationQualification: (proposed.motherEducation as string) || "",
+            annualIncome: proposed.motherIncome ? (isNaN(parseFloat(String(proposed.motherIncome))) ? null : parseFloat(String(proposed.motherIncome))) : null,
+            address: effectiveMotherAddress || "",
+            aadharNumber: encryptedMotherAadhar || null,
+            panNumber: encryptedParentPan || null,
+            panCardPath: movedFiles.parentPanCardPath || null,
+            motherPhotoPath: movedFiles.motherPhotoPath || null,
+            parentPhotoPath: movedFiles.motherPhotoPath || null,
           },
         });
       }
 
       // 4. Update Academic Session if class/session provided
       if (proposed.className || proposed.sessionYear) {
+        const cls = (proposed.className as string) || (proposed.currentClass as string) || student.currentClass || "Nursery - PP3";
+        const yr = (proposed.sessionYear as string) || "2026-2027";
         const latestSession = student.academicSessions[0];
         if (latestSession) {
           await tx.academicSession.update({
             where: { id: latestSession.id },
             data: {
-              className: (proposed.className as string) || latestSession.className,
-              sessionYear: (proposed.sessionYear as string) || latestSession.sessionYear,
+              className: cls,
+              sessionYear: yr,
+            },
+          });
+        } else {
+          await tx.academicSession.create({
+            data: {
+              studentSrNumber: srNumber,
+              className: cls,
+              sessionYear: yr,
             },
           });
         }
@@ -316,9 +575,18 @@ export async function approveEditRequest(requestId: string) {
     });
 
     revalidatePath(`/students/${encodeURIComponent(srNumber)}`);
+    revalidatePath(`/students/${encodeURIComponent(srNumber)}/sr-front-page`);
+    revalidatePath(`/students/${encodeURIComponent(srNumber)}/sr-back-page`);
+    revalidatePath(`/students/${encodeURIComponent(srNumber)}/report-cards/pre-primary`);
+    revalidatePath(`/students/${encodeURIComponent(srNumber)}/report-cards/lower-primary`);
+    revalidatePath(`/students/${encodeURIComponent(srNumber)}/report-cards/mid-levels`);
+    revalidatePath(`/students/${encodeURIComponent(srNumber)}/report-cards/class-ix`);
+    revalidatePath(`/students/${encodeURIComponent(srNumber)}/transfer-certificate`);
+    revalidatePath(`/students/${encodeURIComponent(srNumber)}/id-card`);
     revalidatePath("/directory");
     revalidatePath("/director-dashboard");
     revalidatePath("/approvals");
+    revalidatePath("/registers/data-entry");
     revalidatePath("/");
 
     return {
@@ -355,6 +623,11 @@ export async function rejectEditRequest(requestId: string, reason?: string) {
       return { success: false, error: `Edit request has already been ${request.status.toLowerCase()}.` };
     }
 
+    let proposed: Record<string, unknown> = {};
+    try {
+      proposed = JSON.parse(request.proposedData);
+    } catch {}
+
     // Clean up temp files
     const attachedFiles: { fieldName: string; tempPath: string }[] = request.attachedFiles
       ? JSON.parse(request.attachedFiles)
@@ -364,14 +637,23 @@ export async function rejectEditRequest(requestId: string, reason?: string) {
       await deleteTempFile(af.tempPath);
     }
 
-    // Mark as REJECTED
-    await prisma.studentEditRequest.update({
-      where: { id: requestId },
-      data: {
-        status: "REJECTED",
-        rejectionReason: reason || "Rejected by Director",
-        reviewedAt: new Date(),
-      },
+    // Mark as REJECTED and restore student status if this was a deletion request
+    await prisma.$transaction(async (tx) => {
+      await tx.studentEditRequest.update({
+        where: { id: requestId },
+        data: {
+          status: "REJECTED",
+          rejectionReason: reason || "Rejected by Director",
+          reviewedAt: new Date(),
+        },
+      });
+
+      if (proposed._editType === "DELETE_STUDENT" && request.student?.recordStatus === "PENDING_DELETION") {
+        await tx.student.update({
+          where: { id: request.student.id },
+          data: { recordStatus: "APPROVED" },
+        });
+      }
     });
 
     // Record audit log
@@ -391,6 +673,7 @@ export async function rejectEditRequest(requestId: string, reason?: string) {
 
     revalidatePath("/director-dashboard");
     revalidatePath("/approvals");
+    revalidatePath("/directory");
     revalidatePath("/");
 
     return {

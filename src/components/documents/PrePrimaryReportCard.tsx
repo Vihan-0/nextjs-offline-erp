@@ -1,5 +1,6 @@
 import React from 'react';
 import Image from 'next/image';
+import { convertScoreOrGradeToLetterGrade } from '@/lib/classHierarchy';
 
 export interface PrePrimaryAssessmentRow {
   category: string;
@@ -87,12 +88,13 @@ export const PRE_PRIMARY_CURRICULUM = [
 // Helper to format grade string into stars (* / ** / *** / ****)
 export function formatStars(grade?: string | null): string {
   if (!grade) return '';
-  const clean = grade.trim().toUpperCase();
+  const converted = convertScoreOrGradeToLetterGrade(grade);
+  const clean = (converted || grade).trim().toUpperCase();
   if (clean === '****' || clean === '4' || clean === 'A+' || clean === 'BEST') return '****';
   if (clean === '***' || clean === '3' || clean === 'A' || clean === 'BETTER') return '***';
   if (clean === '**' || clean === '2' || clean === 'B' || clean === 'GOOD') return '**';
   if (clean === '*' || clean === '1' || clean === 'C' || clean === 'D' || clean === 'SPECIAL ATTENTION') return '*';
-  return grade;
+  return clean;
 }
 
 export function PrePrimaryReportCard({ data, className = '' }: PrePrimaryReportCardProps) {
@@ -226,7 +228,7 @@ export function PrePrimaryReportCard({ data, className = '' }: PrePrimaryReportC
                   CLASS & SECTION
                 </td>
                 <td style={{ width: '22%', padding: '4px 6px', color: '#000000', fontWeight: '900', textTransform: 'uppercase' }}>
-                  {data.classAndSection || 'PRE-PRIMARY A'}
+                  {data.classAndSection || '—'}
                 </td>
               </tr>
               <tr style={{ borderBottom: '1.5px solid #0f295b' }}>
@@ -537,7 +539,7 @@ export function PrePrimaryReportCard({ data, className = '' }: PrePrimaryReportC
                 textTransform: 'uppercase',
               }}
             >
-              {data.teacherRemark || 'EXCELLENT PROGRESS & ACTIVE PARTICIPATION'}
+              {data.teacherRemark || '—'}
             </span>
           </div>
 
@@ -552,7 +554,7 @@ export function PrePrimaryReportCard({ data, className = '' }: PrePrimaryReportC
           >
             <span style={{ width: '220px', fontWeight: '900' }}>Passed & Promoted to Class :-</span>
             <span style={{ color: '#000000', fontWeight: '900', textTransform: 'uppercase' }}>
-              {data.passedAndPromotedToClass || 'CLASS I'}
+              {data.passedAndPromotedToClass || '—'}
             </span>
           </div>
         </div>

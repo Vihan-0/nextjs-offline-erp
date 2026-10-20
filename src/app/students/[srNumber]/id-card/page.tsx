@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import prisma from "@/lib/prisma";
 import { getEnclosureUrl } from "@/lib/enclosures";
+import { parseSessionStartYear } from "@/lib/classHierarchy";
 import { StudentIDCardClient } from "@/components/documents/StudentIDCardClient";
 import { type StudentIDCardData } from "@/components/documents/StudentIDCard";
 import { AlertCircle, ArrowLeft, PlusCircle } from "lucide-react";
@@ -111,10 +112,16 @@ export default async function StudentIDCardPage({ params }: PageProps) {
     mother?.address ||
     "—";
 
-  // Class and Session
-  const latestSession = student.academicSessions[0];
-  const className = latestSession?.className || "NURSERY";
-  const sessionYear = latestSession?.sessionYear || "2026-2027";
+  // Class and Session (Latest active session or currentClass)
+  const sortedSessions = [...student.academicSessions].sort((a, b) => {
+    const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+    const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+    if (yA !== yB) return yB - yA;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+  const latestSession = sortedSessions[0];
+  const className = student.currentClass || latestSession?.className || student.admissionClass || "Nursery - PP3";
+  const sessionYear = latestSession?.sessionYear || student.admissionSession || "2026-2027";
 
   const cardData: StudentIDCardData = {
     srNumber: student.srNumber,

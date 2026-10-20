@@ -8,6 +8,7 @@ import {
   TC_CLASSES,
 } from "@/components/documents/TransferCertificate";
 import { decryptData } from "@/lib/encryption";
+import { parseSessionStartYear } from "@/lib/classHierarchy";
 import {
   generateDeterministicTraceCode,
   generateVerificationQRDataUrl,
@@ -154,13 +155,18 @@ export default async function TransferCertificateServerPage({ params }: PageProp
     ? `${mother.firstName} ${mother.lastName}`.trim()
     : "—";
 
-  // Academic sessions history
-  const sessions = student.academicSessions;
+  // Academic sessions history (strictly sorted chronologically)
+  const sessions = [...student.academicSessions].sort((a, b) => {
+    const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+    const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+    if (yA !== yB) return yA - yB;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
   const initialSession = sessions[0];
   const latestSession = sessions[sessions.length - 1];
 
-  const lastStudiedClass = latestSession?.className || "CLASS I";
-  const sessionYear = latestSession?.sessionYear || "2026-2027";
+  const lastStudiedClass = student.currentClass || latestSession?.className || student.admissionClass || "Class 1";
+  const sessionYear = latestSession?.sessionYear || student.admissionSession || "2026-2027";
 
   // Decrypt APAAR ID if stored encrypted
   const decryptedApaar = student.apaarId ? decryptData(student.apaarId) : "";
@@ -183,7 +189,7 @@ export default async function TransferCertificateServerPage({ params }: PageProp
       academicHistory[tcKey] = {
         className: tcKey,
         dateOfAdmission: formatDateFormatted(s.createdAt),
-        result: s.resultStatus || "Passed & Promoted",
+        result: s.resultStatus || "—",
         workAndConduct: "Good",
       };
     }
@@ -204,7 +210,7 @@ export default async function TransferCertificateServerPage({ params }: PageProp
       dateOfBirth: student.dateOfBirth?.toISOString() || null,
       className: lastStudiedClass,
       sessionYear,
-      resultStatus: latestSession?.resultStatus || "Passed & Promoted",
+      resultStatus: latestSession?.resultStatus || "—",
     },
     "TC"
   );
@@ -212,12 +218,25 @@ export default async function TransferCertificateServerPage({ params }: PageProp
   // Generate high-resolution scannable QR Code data URL
   const qrCodeDataUrl = await generateVerificationQRDataUrl(traceCode);
 
-  // Formatted sequential TC / Serial Number
+  // Look up existing official TC record in the archive
+  const tcRecord = await prisma.transferCertificateRecord.findFirst({
+    where: { studentSrNumber: student.srNumber },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const isTcIssued = student.recordStatus === "TC_ISSUED" || (tcRecord && tcRecord.status === "ISSUED");
+
+  // Formatted sequential TC / Serial Number (or official issued TC number)
   const cleanSrDigits = student.srNumber.replace(/[^0-9]/g, "") || "001";
-  const serialNo = `THPHS/TC/${sessionYear}/${cleanSrDigits}`;
+  const serialNo = tcRecord?.tcNumber || `THPHS/TC/${sessionYear}/${cleanSrDigits}`;
 
   const today = new Date();
-  const issueDateFormatted = formatDateFormatted(today);
+  const issueDateFormatted = tcRecord?.issueDate
+    ? formatDateFormatted(tcRecord.issueDate)
+    : formatDateFormatted(today);
+  const dateOfRemovalFormatted = tcRecord?.leavingDate
+    ? formatDateFormatted(tcRecord.leavingDate)
+    : formatDateFormatted(today);
 
   // Ensure an immutable audit snapshot exists for immediate public verification
   await prisma.auditLog.upsert({
@@ -233,10 +252,10 @@ export default async function TransferCertificateServerPage({ params }: PageProp
         fatherName,
         motherName,
         dateOfBirth: formatDateFormatted(student.dateOfBirth),
-        className: lastStudiedClass,
+        className: tcRecord?.leavingClass || lastStudiedClass,
         sessionYear,
-        resultStatus: latestSession?.resultStatus || "Passed & Promoted",
-        issuedAt: today.toISOString(),
+        resultStatus: latestSession?.resultStatus || "—",
+        issuedAt: tcRecord?.issueDate ? tcRecord.issueDate.toISOString() : today.toISOString(),
       }),
     },
   });
@@ -244,15 +263,15 @@ export default async function TransferCertificateServerPage({ params }: PageProp
   const tcData: TransferCertificateData = {
     serialNo,
     admissionNo: student.srNumber,
-    penNo: "", // Can be filled via live editor or DB
-    apparId: decryptedApaar || "",
+    penNo: student.penNumber || "—",
+    apparId: decryptedApaar || "—",
     traceCode,
     qrCodeDataUrl,
 
     studentName: `${student.firstName} ${student.lastName}`.trim(),
     dateOfBirthFormatted: formatDateFormatted(student.dateOfBirth),
-    religion: student.religion || "HINDU",
-    caste: student.category || "GENERAL",
+    religion: student.religion || "—",
+    caste: student.category || "—",
 
     fatherName,
     motherName,
@@ -263,7 +282,7 @@ export default async function TransferCertificateServerPage({ params }: PageProp
 
     academicHistory,
 
-    dateOfRemoval: formatDateFormatted(today),
+    dateOfRemoval: dateOfRemovalFormatted,
     issueDateFormatted,
 
     udiseCode: "09270916593",
@@ -274,5 +293,27 @@ export default async function TransferCertificateServerPage({ params }: PageProp
     schoolMobile: "9235445596",
   };
 
-  return <TransferCertificateClient student={tcData} />;
+  return (
+    <TransferCertificateClient
+      student={tcData}
+      isTcIssued={Boolean(isTcIssued)}
+      tcRecord={
+        tcRecord
+          ? {
+              id: tcRecord.id,
+              tcNumber: tcRecord.tcNumber,
+              leavingClass: tcRecord.leavingClass,
+              leavingDate: tcRecord.leavingDate.toISOString(),
+              reasonForLeaving: tcRecord.reasonForLeaving,
+              conduct: tcRecord.conduct,
+              promotedTo: tcRecord.promotedTo,
+              feeDuesStatus: tcRecord.feeDuesStatus,
+              status: tcRecord.status,
+              receiptSignatureStatus: tcRecord.receiptSignatureStatus,
+            }
+          : null
+      }
+      lastStudiedClass={tcRecord?.leavingClass || lastStudiedClass}
+    />
+  );
 }

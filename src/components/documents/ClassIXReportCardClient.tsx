@@ -247,7 +247,7 @@ export function ClassIXReportCardClient({
   ) => {
     setStudentData((prev) => {
       const current = prev.personalityTraits || {};
-      const row = current[trait] || { halfYearly: "Always", annual: "Always" };
+      const row = current[trait] || {};
       return {
         ...prev,
         personalityTraits: {

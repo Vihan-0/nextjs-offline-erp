@@ -52,6 +52,14 @@ const FIELD_LABELS: Record<string, string> = {
   address: "Residential Address",
   className: "Class",
   sessionYear: "Session Year",
+  tcNumber: "TC Serial Number",
+  leavingClass: "Class of Leaving",
+  leavingDate: "Date of Leaving",
+  reasonForLeaving: "Reason for Leaving",
+  conduct: "Character & Conduct",
+  promotedTo: "Promoted to Class",
+  feeDuesStatus: "Fee Dues Status",
+  remarks: "Office Remarks",
 };
 
 function getExistingValue(student: EditRequest["student"], key: string): string {
@@ -178,10 +186,12 @@ export function ApprovalsClient({ requests }: ApprovalsClientProps) {
 
             const isHistoricalSession = proposed._editType === "ADD_HISTORICAL_SESSION";
             const isDeleteRequest = proposed._editType === "DELETE_STUDENT";
+            const isTCRequest = req.changeType === "ISSUE_TC" || proposed._editType === "ISSUE_TC";
 
             // Find fields that differ
             const changedFields = Object.keys(proposed).filter((key) => {
               if (isDeleteRequest && key === "reason") return true;
+              if (isTCRequest) return key !== "_editType" && key !== "traceCode" && key !== "studentSrNumber";
               if (!FIELD_LABELS[key] && !isHistoricalSession) return false;
               if (isHistoricalSession) return true; // Show all included fields for historical session
               const existingVal = getExistingValue(req.student, key);
@@ -215,6 +225,8 @@ export function ApprovalsClient({ requests }: ApprovalsClientProps) {
                         <span className="text-red-400 font-bold">⚠️ Permanent Record Deletion Request</span>
                       ) : isHistoricalSession ? (
                         <span className="text-amber-400 font-bold">New Historical Session</span>
+                      ) : isTCRequest ? (
+                        <span className="text-rose-400 font-bold">🎓 Issue Transfer Certificate &amp; Freeze Record</span>
                       ) : (
                         <>{changedFields.length} field{changedFields.length !== 1 ? "s" : ""} modified</>
                       )}

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { normalizeSrNumber } from "@/lib/srNumber";
+
 const MAX_FILE_SIZE = 5000000; // 5MB
 const ACCEPTED_FILE_TYPES = [
   "image/jpeg",
@@ -19,7 +21,10 @@ const fileSchema = z
 
 export const admissionSchema = z.object({
   // Student Details
-  srNumber: z.string().min(1, "Scholar Register Number is required"),
+  srNumber: z
+    .string()
+    .min(1, "Scholar Register Number is required")
+    .transform((val) => normalizeSrNumber(val)),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   dateOfBirth: z.string().min(1, "Date of birth is required"),
@@ -56,16 +61,42 @@ export const admissionSchema = z.object({
   parentPan: z.string().optional(),
 
   // Extended Identifiers
+  penNumber: z.string().optional().refine(
+    (val) => !val || val.replace(/\s/g, "").length === 11,
+    "PEN number must be exactly 11 digits"
+  ),
+  apaarId: z.string().optional().refine(
+    (val) => !val || val.replace(/\s/g, "").length === 12,
+    "APAAR ID must be exactly 12 digits"
+  ),
   aadharNumber: z.string().optional().refine(
     (val) => !val || val.replace(/\s/g, "").length === 12,
     "Aadhaar number must be exactly 12 digits"
   ),
-  motherIncome: z.string().optional(),
-  apaarId: z.string().optional().refine(
+  fatherAadhar: z.string().optional().refine(
     (val) => !val || val.replace(/\s/g, "").length === 12,
-    "APAAR/PEN ID must be exactly 12 digits"
+    "Father's Aadhaar must be exactly 12 digits"
   ),
+  motherAadhar: z.string().optional().refine(
+    (val) => !val || val.replace(/\s/g, "").length === 12,
+    "Mother's Aadhaar must be exactly 12 digits"
+  ),
+  motherIncome: z.string().optional(),
+  admissionDate: z.string().optional(),
+  admissionSession: z.string().optional(),
   admissionClass: z.string().optional(),
-});
+}).refine(
+  (data) => {
+    if (!data.dateOfBirth || !data.admissionDate) return true;
+    const dob = new Date(data.dateOfBirth);
+    const adm = new Date(data.admissionDate);
+    if (isNaN(dob.getTime()) || isNaN(adm.getTime())) return true;
+    return dob <= adm;
+  },
+  {
+    message: "Date of Birth cannot be after Date of Admission.",
+    path: ["dateOfBirth"],
+  }
+);
 
 export type AdmissionFormValues = z.infer<typeof admissionSchema>;

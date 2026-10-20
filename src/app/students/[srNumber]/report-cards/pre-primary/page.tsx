@@ -11,6 +11,8 @@ import {
   generateDeterministicTraceCode,
   generateVerificationQRDataUrl,
 } from "@/lib/document-security";
+import { decryptData } from "@/lib/encryption";
+import { areSessionsEqual, parseSessionStartYear, normalizeTermKey, convertScoreOrGradeToLetterGrade } from "@/lib/classHierarchy";
 
 interface PageProps {
   params: Promise<{
@@ -123,15 +125,22 @@ export default async function PrePrimaryReportCardPage({ params, searchParams }:
     "—";
 
   // Academic Session Details
+  const sortedSessions = [...student.academicSessions].sort((a, b) => {
+    const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+    const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+    if (yA !== yB) return yB - yA;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
   const selectedSession = sessionParam 
-    ? student.academicSessions.find(s => s.sessionYear === sessionParam)
-    : student.academicSessions[0];
+    ? sortedSessions.find(s => areSessionsEqual(s.sessionYear, sessionParam))
+    : sortedSessions[0];
     
-  const latestSession = selectedSession || student.academicSessions[0];
-  const className = latestSession?.className || "NURSERY";
+  const latestSession = selectedSession || sortedSessions[0];
+  const className = selectedSession?.className || student.currentClass || latestSession?.className || student.admissionClass || "Nursery - PP3";
   const section = latestSession?.section ? ` - ${latestSession.section}` : "";
   const classAndSection = `${className}${section}`.trim();
-  const sessionYear = latestSession?.sessionYear || "2025-2026";
+  const sessionYear = latestSession?.sessionYear || student.admissionSession || "2026-2027";
 
   // Build Assessment Map from Database Marks and SoftSkills
   const assessments: Record<
@@ -139,40 +148,10 @@ export default async function PrePrimaryReportCardPage({ params, searchParams }:
     { term1?: string; term2?: string; term3?: string; term4?: string }
   > = {};
 
-  // Standard sample performance map for pre-primary terms if DB records are sparse
-  const sampleStarDistributions: Record<string, [string, string, string, string]> = {
-    "Reading / Recitation": ["****", "****", "****", "****"],
-    "Writing / Dictation": ["***", "****", "****", "****"],
-    "Written / Activity": ["****", "***", "****", "****"],
-    "Written": ["***", "****", "****", "****"],
-    "Activity": ["****", "****", "****", "****"],
-    "Numerical Concept": ["***", "***", "****", "****"],
-    "Theme Knowledge": ["****", "****", "****", "****"],
-    "General Awareness": ["***", "****", "****", "****"],
-    "Conversation Skill": ["****", "****", "****", "****"],
-    "Learning through Audio-Visual Aids": ["****", "****", "****", "****"],
-    "Freehand Drawing Colouring": ["****", "****", "****", "****"],
-    "Dance/Music": ["****", "****", "****", "****"],
-    "Courtesy and Politeness": ["****", "****", "****", "****"],
-    "Friendliness": ["****", "****", "****", "****"],
-    "Willingness to Learn/Regularity": ["***", "****", "****", "****"],
-    "Awareness of personal Hygiene": ["****", "****", "****", "****"],
-    "Eating Habits": ["****", "****", "****", "****"],
-    "Gross Motor Development": ["****", "****", "****", "****"],
-    "Motor Development": ["****", "****", "****", "****"],
-    "Independence / Responsibility": ["***", "****", "****", "****"],
-  };
-
-  // 1. Initialize all curriculum keys
+  // 1. Initialize all curriculum keys as empty records
   PRE_PRIMARY_CURRICULUM.forEach((group) => {
     group.items.forEach((item) => {
-      const defaults = sampleStarDistributions[item] || ["****", "****", "****", "****"];
-      assessments[item] = {
-        term1: defaults[0],
-        term2: defaults[1],
-        term3: defaults[2],
-        term4: defaults[3],
-      };
+      assessments[item] = {};
     });
   });
 
@@ -180,59 +159,103 @@ export default async function PrePrimaryReportCardPage({ params, searchParams }:
   if (latestSession?.softSkills) {
     latestSession.softSkills.forEach((skill) => {
       const name = skill.skillName;
-      if (!assessments[name]) {
-        assessments[name] = {};
+      const targetKey = Object.keys(assessments).find(
+        (k) => k.toLowerCase() === name?.toLowerCase() || k.toLowerCase().includes(name?.toLowerCase() || "") || (name && name.toLowerCase().includes(k.toLowerCase()))
+      ) || name;
+      if (!assessments[targetKey]) {
+        assessments[targetKey] = {};
       }
-      const termNorm = skill.term?.trim().toUpperCase();
-      if (termNorm === "I" || termNorm === "TERM 1" || termNorm === "TERM I") {
-        assessments[name].term1 = skill.grade;
-      } else if (termNorm === "II" || termNorm === "TERM 2" || termNorm === "TERM II") {
-        assessments[name].term2 = skill.grade;
-      } else if (termNorm === "III" || termNorm === "TERM 3" || termNorm === "TERM III") {
-        assessments[name].term3 = skill.grade;
-      } else if (termNorm === "IV" || termNorm === "TERM 4" || termNorm === "TERM IV") {
-        assessments[name].term4 = skill.grade;
+      const termKey = normalizeTermKey(skill.term);
+      if (termKey) {
+        assessments[targetKey][termKey] = convertScoreOrGradeToLetterGrade(skill.grade);
       }
     });
   }
 
-  // 3. Overlay live marks from database (Single Source of Truth)
+  // Helper to map register subject names to exact Pre-Primary template keys
+  const resolvePrePrimarySubjectKey = (name: string): string => {
+    const n = name.trim().toLowerCase();
+
+    // English
+    if (n.includes("english")) {
+      if (n.includes("reading") || n.includes("recitation")) return "Reading / Recitation";
+      if (n.includes("writing") || n.includes("dictation")) return "Writing / Dictation";
+      if (n.includes("literature") || n.includes("language") || n.includes("activity") || n.includes("written")) {
+        return "Written / Activity";
+      }
+    }
+
+    // Hindi
+    if (n.includes("hindi")) {
+      if (n.includes("reading") || n.includes("recitation")) return "Reading / Recitation";
+      if (n.includes("writing") || n.includes("dictation")) return "Writing / Dictation";
+      if (n.includes("literature") || n.includes("language") || n.includes("activity") || n.includes("written")) {
+        return "Written / Activity";
+      }
+    }
+
+    // Maths
+    if (n.includes("math")) {
+      if (n.includes("logic") || n.includes("calc") || n.includes("numerical")) return "Numerical Concept";
+      if (n.includes("oral") || n.includes("activity")) return "Activity";
+      if (n.includes("written") || n.includes("mental")) return "Written";
+    }
+
+    // Environmental Learning / EVS
+    if (n.includes("environmental") || n.includes("evs") || n.includes("environment")) {
+      if (n.includes("oral") || n.includes("conversation")) return "Conversation Skill";
+      if (n.includes("written") || n.includes("theme")) return "Theme Knowledge";
+      if (n.includes("activity")) return "Activity";
+    }
+
+    // General Awareness
+    if (n.includes("general") || n.includes("awareness") || n.includes("gk") || n.includes("g.k")) {
+      return "General Awareness";
+    }
+
+    // Fallback: match by closest existing assessment key
+    const match = Object.keys(assessments).find(
+      (k) => k.toLowerCase() === n || k.toLowerCase().includes(n) || n.includes(k.toLowerCase())
+    );
+    return match || name;
+  };
+
+  // 3. Overlay live marks from database (Single Source of Truth, scoped to active session)
   const liveMarks = await prisma.mark.findMany({
     where: {
       academicSession: {
         studentSrNumber: decodedSrNumber.toUpperCase(),
+        ...(latestSession?.id ? { id: latestSession.id } : {}),
       },
     },
     orderBy: { updatedAt: "desc" },
   });
 
   liveMarks.forEach((mark) => {
-    const name = mark.subjectName;
-    const targetKey = Object.keys(assessments).find(
-      (k) => k.toLowerCase() === name?.toLowerCase() || k.toLowerCase().includes(name?.toLowerCase() || "") || (name && name.toLowerCase().includes(k.toLowerCase()))
-    ) || name;
-
+    const targetKey = resolvePrePrimarySubjectKey(mark.subjectName);
     if (!assessments[targetKey]) {
       assessments[targetKey] = {};
     }
-    const examNorm = mark.examType?.trim().toUpperCase() || "";
-    const grade = mark.grade || (mark.totalMarksObtained !== null && mark.totalMarksObtained !== undefined ? String(mark.totalMarksObtained) : "****");
+    const termKey = normalizeTermKey(mark.examType);
+    const rawVal = mark.grade || (mark.totalMarksObtained !== null && mark.totalMarksObtained !== undefined ? mark.totalMarksObtained : mark.writtenMarksObtained);
+    const grade = convertScoreOrGradeToLetterGrade(rawVal, mark.totalMaxMarks || mark.writtenMaxMarks || 100);
 
-    if (examNorm.includes("1") || examNorm.includes("I") || examNorm.includes("UT1")) {
-      if (!assessments[targetKey].term1 || assessments[targetKey].term1 === "****") assessments[targetKey].term1 = grade;
-    } else if (examNorm.includes("2") || examNorm.includes("II") || examNorm.includes("HALF")) {
-      if (!assessments[targetKey].term2 || assessments[targetKey].term2 === "****") assessments[targetKey].term2 = grade;
-    } else if (examNorm.includes("3") || examNorm.includes("III") || examNorm.includes("UT2")) {
-      if (!assessments[targetKey].term3 || assessments[targetKey].term3 === "****") assessments[targetKey].term3 = grade;
-    } else if (examNorm.includes("4") || examNorm.includes("IV") || examNorm.includes("ANNUAL")) {
-      if (!assessments[targetKey].term4 || assessments[targetKey].term4 === "****") assessments[targetKey].term4 = grade;
+    if (termKey) {
+      const validTerm = termKey as "term1" | "term2" | "term3" | "term4";
+      if (!assessments[targetKey][validTerm]) {
+        assessments[targetKey][validTerm] = grade;
+      }
     }
   });
 
-  // Attendance formulation
-  const annualPresent = latestSession?.annualAttendance || latestSession?.totalMeetingsPresent || 188;
-  const annualTotal = latestSession?.annualTotalDays || latestSession?.totalMeetings || 198;
-  const attendancePercentage = Math.round((annualPresent / annualTotal) * 100);
+  // Attendance formulation (truthful from database)
+  const annualPresent = latestSession?.annualAttendance ?? latestSession?.totalMeetingsPresent ?? null;
+  const annualTotal = latestSession?.annualTotalDays ?? latestSession?.totalMeetings ?? null;
+  const attendancePercentage = (annualPresent !== null && annualTotal !== null && annualTotal > 0)
+    ? Math.round((annualPresent / annualTotal) * 100)
+    : null;
+
+  const decryptedAadhaar = student.aadharNumber ? decryptData(student.aadharNumber) : null;
 
   // Deterministic Cryptographic Anti-Tamper Trace Code
   const traceCode = generateDeterministicTraceCode(
@@ -243,7 +266,7 @@ export default async function PrePrimaryReportCardPage({ params, searchParams }:
       dateOfBirth: student.dateOfBirth?.toISOString() || null,
       className: classAndSection,
       sessionYear,
-      resultStatus: latestSession?.resultStatus || "CLASS I",
+      resultStatus: latestSession?.resultStatus || "—",
       marksHash: JSON.stringify(assessments),
     },
     "RC"
@@ -268,7 +291,7 @@ export default async function PrePrimaryReportCardPage({ params, searchParams }:
         className: classAndSection,
         sessionYear,
         assessments,
-        promotedToClass: latestSession?.resultStatus || "CLASS I",
+        promotedToClass: latestSession?.resultStatus || "—",
         issuedAt: new Date().toISOString(),
       }),
     },
@@ -284,18 +307,20 @@ export default async function PrePrimaryReportCardPage({ params, searchParams }:
     classAndSection,
     contactNo,
     branch: "MAIN BRANCH",
-    aadhaarNo: student.aadharCardPath ? "Available on Record" : "—",
+    aadhaarNo: decryptedAadhaar ? decryptedAadhaar.replace(/(\d{4})(?=\d)/g, "$1 ") : "—",
     sessionYear,
     assessments,
     attendance: {
-      term1: "48/50",
-      term2: "46/50",
-      term3: "47/50",
-      term4: "47/48",
-      total: `${annualPresent} / ${annualTotal} Days (${attendancePercentage}%)`,
+      term1: "",
+      term2: "",
+      term3: "",
+      term4: "",
+      total: (annualPresent !== null && annualTotal !== null)
+        ? `${annualPresent} / ${annualTotal} Days (${attendancePercentage}%)`
+        : "—",
     },
-    teacherRemark: "CONFIDENT, ENERGETIC & OUTSTANDING OVERALL PERFORMANCE",
-    passedAndPromotedToClass: latestSession?.resultStatus || "CLASS I",
+    teacherRemark: "",
+    passedAndPromotedToClass: latestSession?.resultStatus || "",
     schoolReopenOn: "01.07.2027",
     traceCode,
     qrCodeDataUrl,

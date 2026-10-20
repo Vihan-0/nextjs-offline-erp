@@ -1,6 +1,8 @@
 import React from "react";
 import Link from "next/link";
 import prisma from "@/lib/prisma";
+import { decryptData } from "@/lib/encryption";
+import { areSessionsEqual, parseSessionStartYear, normalizeTermKey } from "@/lib/classHierarchy";
 import { ClassIXReportCardClient } from "@/components/documents/ClassIXReportCardClient";
 import {
   type ClassIXReportCardData,
@@ -122,21 +124,29 @@ export default async function ClassIXReportCardPage({ params, searchParams }: Pa
     mother?.phoneNumber ||
     "—";
   const address =
+    student.currentAddress ||
     primaryParent?.address ||
     father?.address ||
     mother?.address ||
     "—";
 
   // Academic Session Details
+  const sortedSessions = [...student.academicSessions].sort((a, b) => {
+    const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+    const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+    if (yA !== yB) return yB - yA;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
   const selectedSession = sessionParam 
-    ? student.academicSessions.find(s => s.sessionYear === sessionParam)
-    : student.academicSessions[0];
+    ? sortedSessions.find(s => areSessionsEqual(s.sessionYear, sessionParam))
+    : sortedSessions[0];
     
-  const latestSession = selectedSession || student.academicSessions[0];
-  const className = latestSession?.className || "CLASS IX";
+  const latestSession = selectedSession || sortedSessions[0];
+  const className = selectedSession?.className || student.currentClass || latestSession?.className || student.admissionClass || "Class 9";
   const section = latestSession?.section ? ` - ${latestSession.section}` : "";
   const classAndSection = `${className}${section}`.trim();
-  const sessionYear = latestSession?.sessionYear || "2025-2026";
+  const sessionYear = latestSession?.sessionYear || student.admissionSession || "2026-2027";
 
   // Fetch student's live records directly from the Mark table (Single Source of Truth)
   const rawSubjectMarks = await fetchLiveSubjectMarks(decodedSrNumber, CLASS_IX_SUBJECTS, latestSession?.id);
@@ -158,23 +168,20 @@ export default async function ClassIXReportCardPage({ params, searchParams }: Pa
     };
   });
 
-  // Project Grades
+  // Project Grades (do not auto-fill fake "A+"s when no records exist)
   const allProjectSubjects = [...CLASS_IX_PROJECT_SUBJECTS.left, ...CLASS_IX_PROJECT_SUBJECTS.right];
   const projectGrades: Record<string, { halfYearly: string; annual: string }> = {};
   allProjectSubjects.forEach((subj) => {
     projectGrades[subj] = {
-      halfYearly: "A+",
-      annual: "A+",
+      halfYearly: "",
+      annual: "",
     };
   });
 
-  // Personality Development Traits
-  const personalityTraits: Record<string, { halfYearly: TraitRating; annual: TraitRating }> = {};
+  // Personality Development Traits (do not auto-fill "Always" when unassessed)
+  const personalityTraits: Record<string, { halfYearly?: TraitRating; annual?: TraitRating }> = {};
   CLASS_IX_PERSONALITY_TRAITS.forEach((trait) => {
-    personalityTraits[trait] = {
-      halfYearly: "Always",
-      annual: "Always",
-    };
+    personalityTraits[trait] = {};
   });
 
   // Fetch Live SoftSkills / Project Grades / Traits from database
@@ -190,10 +197,11 @@ export default async function ClassIXReportCardPage({ params, searchParams }: Pa
       );
       if (matchedProject) {
         const termNorm = skill.term?.trim().toUpperCase() || "";
-        if (termNorm.includes("HALF") || termNorm.includes("1") || termNorm.includes("I")) {
-          projectGrades[matchedProject].halfYearly = skill.grade || "A+";
+        const termKey = normalizeTermKey(termNorm);
+        if (termNorm.includes("HALF") || termKey === "term1" || termKey === "term2" || termNorm === "HY") {
+          projectGrades[matchedProject].halfYearly = skill.grade || "";
         } else {
-          projectGrades[matchedProject].annual = skill.grade || "A+";
+          projectGrades[matchedProject].annual = skill.grade || "";
         }
       }
 
@@ -203,29 +211,47 @@ export default async function ClassIXReportCardPage({ params, searchParams }: Pa
       );
       if (matchedTrait) {
         const gradeVal = skill.grade?.trim();
-        let rating: TraitRating = "Always";
+        let rating: TraitRating | undefined = undefined;
         if (gradeVal?.toLowerCase().includes("most")) rating = "Most of the time";
         else if (gradeVal?.toLowerCase().includes("some")) rating = "Some-time";
         else if (gradeVal?.toLowerCase().includes("rare")) rating = "Rarely";
         else if (gradeVal?.toLowerCase().includes("never")) rating = "Never";
-        else if (gradeVal === "A+" || gradeVal === "A") rating = "Always";
+        else if (gradeVal === "A+" || gradeVal === "A" || gradeVal?.toLowerCase().includes("always")) rating = "Always";
 
-        const termNorm = skill.term?.trim().toUpperCase() || "";
-        if (termNorm.includes("HALF") || termNorm.includes("1") || termNorm.includes("I")) {
-          personalityTraits[matchedTrait].halfYearly = rating;
-        } else {
-          personalityTraits[matchedTrait].annual = rating;
+        if (rating) {
+          const termNorm = skill.term?.trim().toUpperCase() || "";
+          if (termNorm.includes("HALF") || termNorm.includes("1") || termNorm.includes("I")) {
+            personalityTraits[matchedTrait].halfYearly = rating;
+          } else {
+            personalityTraits[matchedTrait].annual = rating;
+          }
         }
       }
     });
   }
 
-  // Attendance
-  const hyPresent = latestSession?.halfYearlyAttendance || 94;
-  const hyTotal = latestSession?.halfYearlyTotalDays || 96;
-  const annualPresent = latestSession?.annualAttendance || latestSession?.totalMeetingsPresent || 192;
-  const annualTotal = latestSession?.annualTotalDays || latestSession?.totalMeetings || 198;
-  const annualPercentage = Math.round((annualPresent / annualTotal) * 100);
+  // Attendance (Do not show fake 94/96 or 192/198 when not entered)
+  const hyPresent = latestSession?.halfYearlyAttendance ?? null;
+  const hyTotal = latestSession?.halfYearlyTotalDays ?? null;
+  const annualPresent = latestSession?.annualAttendance ?? latestSession?.totalMeetingsPresent ?? null;
+  const annualTotal = latestSession?.annualTotalDays ?? latestSession?.totalMeetings ?? null;
+  const attendanceHalfYearly = hyPresent !== null && hyTotal !== null ? `${hyPresent} / ${hyTotal}` : "—";
+  const attendanceAnnual = annualPresent !== null && annualTotal !== null
+    ? `${annualPresent} / ${annualTotal} (${Math.round((annualPresent / annualTotal) * 100)}%)`
+    : "—";
+
+  // Aadhaar decryption
+  const rawAadhar = student.aadharNumber ? decryptData(student.aadharNumber) : null;
+  const aadhaarNo = rawAadhar
+    ? rawAadhar.replace(/(\d{4})(\d{4})(\d{4})/, "$1 $2 $3")
+    : "—";
+
+  const rankInClass = latestSession?.rank
+    ? `${latestSession.rank}${latestSession.rank === 1 ? 'st' : latestSession.rank === 2 ? 'nd' : latestSession.rank === 3 ? 'rd' : 'th'} ( R )`
+    : "—";
+
+  const promotedToClass = latestSession?.resultStatus || "—";
+  const teacherRemark = "";
 
   // Deterministic Cryptographic Anti-Tamper Trace Code
   const traceCode = generateDeterministicTraceCode(
@@ -236,7 +262,7 @@ export default async function ClassIXReportCardPage({ params, searchParams }: Pa
       dateOfBirth: student.dateOfBirth?.toISOString() || null,
       className: classAndSection,
       sessionYear,
-      resultStatus: latestSession?.resultStatus || "CLASS X",
+      resultStatus: promotedToClass,
       marksHash: JSON.stringify(subjectMarks),
     },
     "RC"
@@ -262,7 +288,7 @@ export default async function ClassIXReportCardPage({ params, searchParams }: Pa
         sessionYear,
         subjectMarks,
         projectGrades,
-        promotedToClass: latestSession?.resultStatus || "CLASS X",
+        promotedToClass,
         issuedAt: new Date().toISOString(),
       }),
     },
@@ -278,15 +304,16 @@ export default async function ClassIXReportCardPage({ params, searchParams }: Pa
     classAndSection,
     contactNo,
     branch: "MAIN BRANCH",
-    aadhaarNo: student.aadharCardPath ? "Available on Record" : "—",
+    aadhaarNo,
     sessionYear,
     subjectMarks,
     projectGrades,
     personalityTraits,
-    rankInClass: latestSession?.rank ? `${latestSession.rank}${latestSession.rank === 1 ? 'st' : latestSession.rank === 2 ? 'nd' : latestSession.rank === 3 ? 'rd' : 'th'} ( R )` : "1st ( R )",
-    attendanceHalfYearly: `${hyPresent} / ${hyTotal}`,
-    attendanceAnnual: `${annualPresent} / ${annualTotal} (${annualPercentage}%)`,
-    promotedToClass: latestSession?.resultStatus || "CLASS X",
+    rankInClass,
+    attendanceHalfYearly,
+    attendanceAnnual,
+    promotedToClass,
+    teacherRemark,
     traceCode,
     qrCodeDataUrl,
   };

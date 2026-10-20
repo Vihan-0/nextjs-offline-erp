@@ -7,6 +7,7 @@ import { EditStudentProfileButton } from "@/components/students/EditStudentProfi
 import { StudentEditData } from "@/components/students/EditStudentModal";
 import { GeneralRemarkSection } from "@/components/students/GeneralRemarkSection";
 import { AddHistoricalSessionButton } from "@/components/students/AddHistoricalSessionButton";
+import { decryptData } from "@/lib/encryption";
 import {
   CreditCard,
   ArrowLeft,
@@ -32,9 +33,17 @@ import {
   Copy,
   AlertCircle,
   IndianRupee,
+  Eye,
+  Download,
+  Paperclip,
+  Lock,
 } from "lucide-react";
 
-import { getReportCardRouteForClass, type ReportCardRouteInfo } from "@/lib/classHierarchy";
+import {
+  getReportCardRouteForClass,
+  type ReportCardRouteInfo,
+  parseSessionStartYear,
+} from "@/lib/classHierarchy";
 
 interface PageProps {
   params: Promise<{
@@ -110,9 +119,15 @@ export default async function StudentProfilePage({ params }: PageProps) {
   const father = student.parents.find((p) => p.relationType?.toLowerCase() === "father");
   const mother = student.parents.find((p) => p.relationType?.toLowerCase() === "mother");
   const primaryParent = father || mother || student.parents[0];
-  const latestSession = student.academicSessions[0];
-  const className = latestSession?.className || "NURSERY";
-  const sessionYear = latestSession?.sessionYear || "2026-2027";
+  const sortedSessions = [...student.academicSessions].sort((a, b) => {
+    const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+    const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+    if (yA !== yB) return yB - yA;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+  const latestSession = sortedSessions[0];
+  const className = student.currentClass || latestSession?.className || student.admissionClass || "Nursery - PP3";
+  const sessionYear = latestSession?.sessionYear || student.admissionSession || "2026-2027";
   const fullName = `${student.firstName} ${student.lastName}`.trim();
 
   const activeCardInfo = getReportCardRouteForClass(className);
@@ -124,6 +139,14 @@ export default async function StudentProfilePage({ params }: PageProps) {
     annualPresent !== null && annualTotal !== null && annualTotal > 0
       ? Math.round((annualPresent / annualTotal) * 100)
       : null;
+
+  // Decrypt sensitive credentials
+  const decryptedStudentAadhar = student.aadharNumber ? decryptData(student.aadharNumber) : null;
+  const decryptedFatherAadhar = father?.aadharNumber ? decryptData(father.aadharNumber) : null;
+  const decryptedMotherAadhar = mother?.aadharNumber ? decryptData(mother.aadharNumber) : null;
+  const decryptedParentPan = (father?.panNumber || mother?.panNumber)
+    ? decryptData((father?.panNumber || mother?.panNumber)!)
+    : null;
 
   // Prepare edit payload
   const studentEditData: StudentEditData = {
@@ -141,7 +164,11 @@ export default async function StudentProfilePage({ params }: PageProps) {
     allergies: student.allergies,
     className,
     sessionYear,
-    aadharNumber: student.aadharNumber,
+    admissionDate: student.admissionDate,
+    admissionClass: student.admissionClass,
+    admissionSession: student.admissionSession,
+    aadharNumber: decryptedStudentAadhar || student.aadharNumber,
+    penNumber: student.penNumber,
     apaarId: student.apaarId,
     motherIncome: student.motherIncome,
     currentAddress: student.currentAddress,
@@ -151,13 +178,18 @@ export default async function StudentProfilePage({ params }: PageProps) {
     fatherOccupation: father?.occupation,
     fatherEducation: father?.educationQualification,
     fatherIncome: father?.annualIncome,
+    fatherAadhar: decryptedFatherAadhar || father?.aadharNumber,
     motherName: mother ? `${mother.firstName} ${mother.lastName}`.trim() : "",
     motherPhone: mother?.phoneNumber,
     motherOccupation: mother?.occupation,
     motherEducation: mother?.educationQualification,
-    address: father?.address || mother?.address || primaryParent?.address,
+    motherAadhar: decryptedMotherAadhar || mother?.aadharNumber,
+    parentPan: decryptedParentPan || father?.panNumber || mother?.panNumber,
+    address: student.currentAddress || student.permanentAddress || father?.address || mother?.address || primaryParent?.address,
     photoPath: student.photoPath,
   };
+
+  const isTcIssued = student.recordStatus === "TC_ISSUED";
 
   return (
     <div className="min-h-screen bg-zinc-950 font-sans text-zinc-100 pb-16 vector-grid-lines">
@@ -176,8 +208,15 @@ export default async function StudentProfilePage({ params }: PageProps) {
           </div>
 
           <div className="flex items-center gap-2.5">
-            <EditStudentProfileButton student={studentEditData} variant="pill" />
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-950 text-zinc-400 border border-zinc-800">
+            {isTcIssued ? (
+              <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-red-950 text-red-300 border border-red-800 font-bold flex items-center gap-1">
+                <Lock className="w-3 h-3 text-red-400" />
+                RECORD FROZEN
+              </span>
+            ) : (
+              <EditStudentProfileButton student={studentEditData} variant="pill" />
+            )}
+            <span className={`text-[11px] font-mono px-2 py-0.5 rounded border ${isTcIssued ? "bg-red-950/60 text-red-300 border-red-800/60 font-bold" : "bg-zinc-950 text-zinc-400 border-zinc-800"}`}>
               Record: {student.recordStatus || "ACTIVE"}
             </span>
           </div>
@@ -186,6 +225,46 @@ export default async function StudentProfilePage({ params }: PageProps) {
 
       {/* Main Profile Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+        {/* TC ISSUED — RECORD PERMANENTLY FROZEN BANNER */}
+        {isTcIssued && (
+          <div className="bg-red-950/80 border-2 border-red-600 rounded-3xl p-6 text-white shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 relative overflow-hidden">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-900 border border-red-500 flex items-center justify-center shrink-0">
+                <ShieldAlert className="w-6 h-6 text-red-200" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-[10px] uppercase px-2 py-0.5 rounded bg-red-900 text-red-200 font-black tracking-wider border border-red-700">
+                    TC REGISTER ARCHIVE
+                  </span>
+                  <h2 className="text-lg font-black text-white font-serif uppercase tracking-tight">
+                    TC ISSUED — RECORD PERMANENTLY FROZEN
+                  </h2>
+                </div>
+                <p className="text-xs text-red-200 leading-relaxed">
+                  This student's official Transfer Certificate has been issued. Their academic history, folios, and demographic records are permanently locked and protected against all further modifications.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                href={`/students/${encodeURIComponent(student.srNumber)}/transfer-certificate`}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-red-800 hover:bg-red-700 text-white border border-red-600 transition-colors shadow-xs"
+              >
+                <Award className="w-3.5 h-3.5" />
+                View Issued TC
+              </Link>
+              <Link
+                href="/tc-register"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-white hover:bg-stone-100 text-red-950 transition-colors shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5 text-red-950" />
+                TC Register
+              </Link>
+            </div>
+          </div>
+        )}
         
         {/* Scholar Banner Card */}
         <div className="bg-zinc-900/90 rounded-3xl border border-zinc-800 p-6 sm:p-8 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative overflow-hidden">
@@ -208,10 +287,18 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 <h1 className="text-2xl sm:text-3xl font-black text-zinc-100 uppercase tracking-tight font-serif">
                   {fullName}
                 </h1>
-                <span className="text-xs font-bold px-2.5 py-0.5 bg-emerald-950/60 text-emerald-300 rounded-full border border-emerald-800/60">
-                  Enrolled
-                </span>
-                <EditStudentProfileButton student={studentEditData} variant="pill" />
+                {isTcIssued ? (
+                  <span className="text-xs font-bold px-2.5 py-0.5 bg-red-950/80 text-red-300 rounded-full border border-red-700">
+                    TC Issued (Archived)
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-xs font-bold px-2.5 py-0.5 bg-emerald-950/60 text-emerald-300 rounded-full border border-emerald-800/60">
+                      Enrolled
+                    </span>
+                    <EditStudentProfileButton student={studentEditData} variant="pill" />
+                  </>
+                )}
               </div>
               <p className="text-xs sm:text-sm text-zinc-400">
                 Scholar No: <strong className="text-zinc-200 font-mono">{student.srNumber}</strong> • Class:{" "}
@@ -296,7 +383,7 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 </p>
               </div>
 
-              {student.academicSessions.length === 1 ? (
+              {sortedSessions.length === 1 ? (
                 <Link
                   href={`/students/${encodeURIComponent(student.srNumber)}/report-cards/${activeCardInfo.route}`}
                   className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-blue-950/60 hover:bg-blue-900/60 text-blue-200 border border-blue-800/60 flex items-center justify-center gap-1.5 transition-colors mt-auto"
@@ -308,7 +395,7 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 <div className="space-y-2 mt-4">
                   <h4 className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Available Sessions</h4>
                   <div className="flex flex-col gap-2 max-h-32 overflow-y-auto pr-1">
-                    {student.academicSessions.map((sess, idx) => {
+                    {sortedSessions.map((sess, idx) => {
                       const sessInfo = getReportCardRouteForClass(sess.className);
                       const isLatest = idx === 0;
                       return (
@@ -342,14 +429,16 @@ export default async function StudentProfilePage({ params }: PageProps) {
                     <Award className="w-4 h-4" />
                   </span>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800/40">
-                    20 CBSE Articles
+                    {isTcIssued ? "Officially Issued & Frozen" : "20 CBSE Articles"}
                   </span>
                 </div>
                 <h3 className="font-bold text-sm text-zinc-100">
                   Transfer Certificate (T.C.)
                 </h3>
                 <p className="text-[11px] text-zinc-400 leading-relaxed">
-                  Official School Leaving Certificate with discharge reasons, conduct certificate, and cryptographic trace stamp.
+                  {isTcIssued
+                    ? "Official TC has been approved and issued. Scholar record is archived in the TC Register."
+                    : "Official School Leaving Certificate with discharge reasons, conduct certificate, and cryptographic trace stamp."}
                 </p>
               </div>
 
@@ -357,7 +446,7 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 href={`/students/${encodeURIComponent(student.srNumber)}/transfer-certificate`}
                 className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-red-950/60 hover:bg-red-900/60 text-red-200 border border-red-800/60 flex items-center justify-center gap-1.5 transition-colors"
               >
-                <span>Generate Official T.C.</span>
+                <span>{isTcIssued ? "View / Print Issued T.C." : "Generate Official T.C."}</span>
                 <ChevronRight className="w-3.5 h-3.5" />
               </Link>
             </div>
@@ -502,6 +591,34 @@ export default async function StudentProfilePage({ params }: PageProps) {
               </Link>
             </div>
 
+            {/* 8. Printable Enrolled Admission Record */}
+            <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex flex-col justify-between space-y-3 hover:border-zinc-700 transition-all">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="w-8 h-8 rounded-lg bg-teal-950/60 text-teal-400 flex items-center justify-center font-bold border border-teal-800/60">
+                    <FileText className="w-4 h-4" />
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-teal-950/40 text-teal-300 border border-teal-800/40">
+                    Official Form
+                  </span>
+                </div>
+                <h3 className="font-bold text-sm text-zinc-100">
+                  Printable Admission Form
+                </h3>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Certified standard admission form pre-filled with decrypted identity codes, parental profile, and verified enclosures.
+                </p>
+              </div>
+
+              <Link
+                href={`/students/${encodeURIComponent(student.srNumber)}/admission-form`}
+                className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-teal-950/60 hover:bg-teal-900/60 text-teal-200 border border-teal-800/60 flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <span>Print Enrolled Form</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
           </div>
 
           {/* Secondary Curriculum Template Switcher */}
@@ -534,8 +651,12 @@ export default async function StudentProfilePage({ params }: PageProps) {
               >
                 Class IX–X
               </Link>
-              <div className="w-px h-4 bg-zinc-800 mx-1 hidden sm:block"></div>
-              <AddHistoricalSessionButton srNumber={student.srNumber} />
+              {!isTcIssued && (
+                <>
+                  <div className="w-px h-4 bg-zinc-800 mx-1 hidden sm:block"></div>
+                  <AddHistoricalSessionButton srNumber={student.srNumber} />
+                </>
+              )}
             </div>
           </div>
 
@@ -555,6 +676,14 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 <span className="font-bold text-zinc-100">{formatDate(student.dateOfBirth)}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-zinc-800/60">
+                <span className="text-zinc-400">Date of Admission</span>
+                <span className="font-bold text-zinc-100">{formatDate(student.admissionDate || student.createdAt)}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-zinc-800/60">
+                <span className="text-zinc-400">Class of Admission</span>
+                <span className="font-bold text-zinc-100">{student.admissionClass || className}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-zinc-800/60">
                 <span className="text-zinc-400">Gender</span>
                 <span className="font-bold text-zinc-100">{student.gender}</span>
               </div>
@@ -569,9 +698,15 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-zinc-800/60">
-                <span className="text-zinc-400">Aadhaar & APAAR</span>
+                <span className="text-zinc-400">Student Aadhaar Number</span>
                 <span className="font-bold text-zinc-100 font-mono">
-                  {student.aadharNumber ? "••••-••••-" + student.aadharNumber.slice(-4) : "—"} / {student.apaarId || "—"}
+                  {decryptedStudentAadhar ? "••••-••••-" + decryptedStudentAadhar.slice(-4) : "—"}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-zinc-800/60">
+                <span className="text-zinc-400">UDISE+ PEN / APAAR ID</span>
+                <span className="font-bold text-zinc-100 font-mono">
+                  {student.penNumber || "—"} / {student.apaarId || "—"}
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-zinc-800/60">
@@ -601,9 +736,27 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-zinc-800/60">
+                <span className="text-zinc-400">Father's Aadhaar</span>
+                <span className="font-mono font-bold text-zinc-200">
+                  {decryptedFatherAadhar ? "••••-••••-" + decryptedFatherAadhar.slice(-4) : "—"}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-zinc-800/60">
                 <span className="text-zinc-400">Mother's Name</span>
                 <span className="font-bold text-zinc-100 uppercase">
                   {mother ? `${mother.firstName} ${mother.lastName}`.trim() : "—"}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-zinc-800/60">
+                <span className="text-zinc-400">Mother's Aadhaar</span>
+                <span className="font-mono font-bold text-zinc-200">
+                  {decryptedMotherAadhar ? "••••-••••-" + decryptedMotherAadhar.slice(-4) : "—"}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-zinc-800/60">
+                <span className="text-zinc-400">Parent PAN</span>
+                <span className="font-mono font-bold text-zinc-200">
+                  {decryptedParentPan ? "••••••" + decryptedParentPan.slice(-4) : "—"}
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-zinc-800/60">
@@ -622,8 +775,8 @@ export default async function StudentProfilePage({ params }: PageProps) {
               <div className="py-1">
                 <span className="text-zinc-400 block mb-1">Residential Address</span>
                 <p className="font-semibold text-zinc-300 uppercase bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 leading-relaxed text-[11px]">
-                  C: {student.currentAddress || "—"} <br/>
-                  P: {student.permanentAddress || father?.address || mother?.address || primaryParent?.address || "—"}
+                  C: {student.currentAddress || father?.address || "—"} <br/>
+                  P: {student.permanentAddress || student.currentAddress || father?.address || mother?.address || primaryParent?.address || "—"}
                 </p>
               </div>
             </div>
@@ -635,6 +788,121 @@ export default async function StudentProfilePage({ params }: PageProps) {
           srNumber={student.srNumber}
           initialRemark={student.generalRemark}
         />
+
+        {/* Verified Documents & Enclosures Dossier */}
+        <div className="bg-zinc-900/90 rounded-3xl border border-zinc-800 p-6 shadow-md space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+            <div>
+              <h2 className="font-bold text-zinc-100 text-sm flex items-center gap-2">
+                <Paperclip className="w-4 h-4 text-cyan-400" />
+                Verified Documents &amp; Enclosures Dossier
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Archived institutional documents and original verification certificates.
+              </p>
+            </div>
+            <span className="text-[11px] font-mono text-zinc-400 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800">
+              Offline Local Storage
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {[
+              {
+                title: "Student Photo",
+                path: student.photoPath,
+                type: "Photograph",
+                desc: "Official institutional passport photograph",
+              },
+              {
+                title: "Birth Certificate",
+                path: student.birthCertificatePath,
+                type: "Municipal Certificate",
+                desc: "Certified municipal / hospital birth certificate",
+              },
+              {
+                title: "Aadhaar Card Copy",
+                path: student.aadharCardPath,
+                type: "UIDAI Document",
+                desc: "Government issued Aadhaar identity enclosure",
+              },
+              {
+                title: "Transfer Certificate (T.C.)",
+                path: student.transferCertificatePath,
+                type: "Previous School T.C.",
+                desc: "Countersigned prior institution leaving certificate",
+              },
+              {
+                title: "Parent PAN Card",
+                path: student.parentPanCardPath,
+                type: "Tax Identification",
+                desc: "Parent or guardian certified PAN card copy",
+              },
+            ].map((doc, idx) => {
+              const fileUrl = doc.path ? getEnclosureUrl(doc.path) : "";
+              const hasFile = Boolean(fileUrl);
+
+              return (
+                <div
+                  key={idx}
+                  className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between ${
+                    hasFile
+                      ? "bg-zinc-950 border-zinc-800 hover:border-zinc-700"
+                      : "bg-zinc-950/40 border-zinc-800/50 opacity-60"
+                  }`}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-500">
+                        {doc.type}
+                      </span>
+                      {hasFile ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 flex items-center gap-1">
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                          Verified
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800">
+                          Not Provided
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-bold text-xs text-zinc-200">{doc.title}</h3>
+                    <p className="text-[11px] text-zinc-400 line-clamp-1">{doc.desc}</p>
+                  </div>
+
+                  <div className="pt-3 mt-3 border-t border-zinc-800/80">
+                    {hasFile ? (
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <Eye className="w-3 h-3 text-cyan-400" />
+                          <span>View Document</span>
+                        </a>
+                        <a
+                          href={fileUrl}
+                          download
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 transition-colors"
+                          title="Download File"
+                        >
+                          <Download className="w-3 h-3" />
+                        </a>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-zinc-600 italic block py-1">
+                        No file uploaded
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Enterprise Universal Audit Ledger Section */}
         <div className="bg-zinc-900/90 rounded-3xl border border-zinc-800 p-6 shadow-md space-y-4">

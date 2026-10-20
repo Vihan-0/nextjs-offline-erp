@@ -8,6 +8,7 @@ import {
   generateDeterministicTraceCode,
   generateVerificationQRDataUrl,
 } from "@/lib/document-security";
+import { parseSessionStartYear } from "@/lib/classHierarchy";
 
 interface PageProps {
   params: Promise<{
@@ -161,13 +162,23 @@ export default async function SRBackPageServer({ params }: PageProps) {
 
   const primaryParent = father || mother || student.parents[0];
   const residentialAddress =
+    student.permanentAddress ||
+    student.currentAddress ||
     primaryParent?.address ||
     father?.address ||
     mother?.address ||
     "—";
 
-  // Map academic sessions into 10-year progression items
-  const recordedSessions: SRProgressionSession[] = student.academicSessions.map(
+  // Sort academic sessions chronologically ascending (oldest first: 13-year progression)
+  const sortedSessions = [...student.academicSessions].sort((a, b) => {
+    const yA = parseSessionStartYear(a.sessionYear) ?? 0;
+    const yB = parseSessionStartYear(b.sessionYear) ?? 0;
+    if (yA !== yB) return yA - yB;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
+  // Map academic sessions into 13-year progression items
+  const recordedSessions: SRProgressionSession[] = sortedSessions.map(
     (session, index) => {
       // Annual attendance computation
       const annualAttendance = session.annualAttendance ?? session.totalMeetingsPresent ?? null;
@@ -187,7 +198,7 @@ export default async function SRBackPageServer({ params }: PageProps) {
         annualAttendance,
         annualTotalDays,
         attendancePercentage,
-        resultStatus: session.resultStatus || "Promoted",
+        resultStatus: session.resultStatus || "—",
         rank: session.rank || null,
         remarks: null,
         isRecorded: true,
@@ -195,8 +206,8 @@ export default async function SRBackPageServer({ params }: PageProps) {
     }
   );
 
-  // Pad remaining up to 10 years if needed
-  const totalSlots = Math.max(10, recordedSessions.length);
+  // Pad remaining up to 13 years if needed
+  const totalSlots = Math.max(13, recordedSessions.length);
   const sessions: SRProgressionSession[] = Array.from({ length: totalSlots }).map((_, idx) => {
     const yearNumber = idx + 1;
     const existing = recordedSessions[idx];
@@ -207,8 +218,9 @@ export default async function SRBackPageServer({ params }: PageProps) {
     };
   });
 
-  const firstSession = student.academicSessions[0];
-  const admissionClass = firstSession?.className || "NURSERY";
+  const firstSession = sortedSessions[0];
+  const admissionClass = student.admissionClass || firstSession?.className || "Nursery - PP3";
+  const admissionDateFormatted = formatDateFormatted(student.admissionDate || student.createdAt);
 
   // Deterministic Cryptographic Anti-Tamper Trace Code
   const traceCode = generateDeterministicTraceCode(
@@ -235,7 +247,7 @@ export default async function SRBackPageServer({ params }: PageProps) {
       studentSrNumber: student.srNumber,
       traceCode,
       details: JSON.stringify({
-        documentTitle: "Scholar Register 10-Year Progression Folio",
+        documentTitle: "Scholar Register 13-Year Progression Folio",
         studentName: `${student.firstName} ${student.lastName}`.trim(),
         fatherName,
         motherName,
@@ -253,7 +265,7 @@ export default async function SRBackPageServer({ params }: PageProps) {
     motherName,
     dateOfBirthFormatted: formatDateFormatted(student.dateOfBirth),
     dateOfBirthWords: formatDateInWords(student.dateOfBirth),
-    admissionDateFormatted: formatDateFormatted(student.createdAt),
+    admissionDateFormatted,
     admissionClass,
     category: student.category || "General",
     nationality: student.nationality || "Indian",

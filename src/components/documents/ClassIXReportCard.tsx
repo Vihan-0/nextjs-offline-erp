@@ -136,17 +136,17 @@ export function ClassIXReportCard({
   const sessionYear = data.sessionYear || '2026-2027';
   const branch = data.branch || 'MAIN BRANCH';
   const aadhaarNo = data.aadhaarNo || '—';
-  const promotedToClass = data.promotedToClass || 'CLASS X';
-  const rankInClass = data.rankInClass || '1st ( R )';
-  const attendanceHY = data.attendanceHalfYearly || '92 / 96';
-  const attendanceAnnual = data.attendanceAnnual || '188 / 198 (95%)';
-  const teacherRemark = data.teacherRemark || 'OUTSTANDING ACADEMIC RECORD WITH EXCELLENT CONDUCT';
+  const promotedToClass = data.promotedToClass || '—';
+  const rankInClass = data.rankInClass || '—';
+  const attendanceHY = data.attendanceHalfYearly || '—';
+  const attendanceAnnual = data.attendanceAnnual || '—';
+  const teacherRemark = data.teacherRemark || '';
   const schoolReopenOn = '01.07.2026';
 
-  const GRADE_SELECT_OPTIONS = ['A+', 'A', 'B+', 'B', 'C', 'D'];
+  const GRADE_SELECT_OPTIONS = ['', 'A+', 'A', 'B+', 'B', 'C', 'D'];
 
   const renderProjectCell = (subj: string, term: 'halfYearly' | 'annual') => {
-    const val = data.projectGrades?.[subj]?.[term] || 'A+';
+    const val = data.projectGrades?.[subj]?.[term] || (isEditable ? '' : '—');
     if (!isEditable) return val;
     return (
       <select
@@ -703,10 +703,7 @@ export function ClassIXReportCard({
               </thead>
               <tbody>
                 {CLASS_IX_PERSONALITY_TRAITS.map((trait) => {
-                  const traitData = data.personalityTraits?.[trait] || {
-                    halfYearly: 'Always',
-                    annual: 'Always',
-                  };
+                  const traitData = data.personalityTraits?.[trait] || {};
 
                   return (
                     <tr key={trait} className="border-b border-[#0f2e60] h-[17px]">

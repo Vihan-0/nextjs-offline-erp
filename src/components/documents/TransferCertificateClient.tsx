@@ -20,6 +20,10 @@ import {
   ChevronUp,
   Sparkles,
   Save,
+  ShieldAlert,
+  X,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 import {
   TransferCertificate,
@@ -27,18 +31,49 @@ import {
   TC_CLASSES,
 } from "./TransferCertificate";
 import { recordAuditLogAction } from "@/actions/audit";
+import { issueTransferCertificate, type IssueTCPayload } from "@/actions/tcActions";
 
 interface TransferCertificateClientProps {
   student: TransferCertificateData;
+  isTcIssued?: boolean;
+  tcRecord?: {
+    id: string;
+    tcNumber: string;
+    leavingClass: string;
+    leavingDate: string;
+    reasonForLeaving?: string | null;
+    conduct?: string;
+    promotedTo?: string | null;
+    feeDuesStatus?: string | null;
+    status: string;
+    receiptSignatureStatus: string;
+  } | null;
+  lastStudiedClass?: string;
 }
 
 export function TransferCertificateClient({
   student: initialStudent,
+  isTcIssued = false,
+  tcRecord = null,
+  lastStudiedClass = "Class 1",
 }: TransferCertificateClientProps) {
   const [data, setData] = useState<TransferCertificateData>(initialStudent);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  // Official TC Issuance modal state
+  const [issueModalOpen, setIssueModalOpen] = useState(false);
+  const [issueTcNumber, setIssueTcNumber] = useState(data.serialNo || "");
+  const [issueLeavingDate, setIssueLeavingDate] = useState(new Date().toISOString().split("T")[0]);
+  const [issueLeavingClass, setIssueLeavingClass] = useState(lastStudiedClass || "Class 1");
+  const [issuePromotedTo, setIssuePromotedTo] = useState("");
+  const [issueFeeDuesStatus, setIssueFeeDuesStatus] = useState("NIL");
+  const [issueConduct, setIssueConduct] = useState("Good");
+  const [issueReason, setIssueReason] = useState("Passed Higher Secondary / Matriculation");
+  const [issueRemarks, setIssueRemarks] = useState("");
+  const [issueResultMsg, setIssueResultMsg] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isIssuing, startIssuing] = useTransition();
 
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -111,8 +146,63 @@ export function TransferCertificateClient({
     });
   };
 
+  const handleIssueOfficialTC = () => {
+    if (!issueLeavingClass || !issueLeavingDate) {
+      setIssueResultMsg({ ok: false, msg: "Leaving class and date of leaving are required." });
+      return;
+    }
+    startIssuing(async () => {
+      const res = await issueTransferCertificate({
+        studentSrNumber: data.admissionNo,
+        leavingClass: issueLeavingClass,
+        leavingDate: issueLeavingDate,
+        tcNumber: issueTcNumber.trim() || undefined,
+        promotedTo: issuePromotedTo.trim() || undefined,
+        feeDuesStatus: issueFeeDuesStatus.trim() || "NIL",
+        issuedBy: "Principal",
+        reasonForLeaving: issueReason,
+        conduct: issueConduct,
+        remarks: issueRemarks || undefined,
+      });
+
+      if (res.success) {
+        setIssueResultMsg({
+          ok: true,
+          msg: res.message || "Transfer Certificate successfully processed.",
+        });
+        setTimeout(() => {
+          window.location.reload();
+        }, 1800);
+      } else {
+        setIssueResultMsg({
+          ok: false,
+          msg: res.error || "Failed to issue Transfer Certificate.",
+        });
+      }
+    });
+  };
+
   return (
     <div className="min-h-screen bg-stone-100 flex flex-col font-sans text-stone-900 pb-16">
+      {/* TC Record Freeze Alert Banner */}
+      {isTcIssued ? (
+        <div className="bg-red-950 text-red-200 border-b border-red-800 px-4 py-2.5 text-xs flex flex-col sm:flex-row items-center justify-between gap-2 no-print">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-red-400 shrink-0" />
+            <span className="font-bold text-white uppercase tracking-wide">
+              Official TC Issued — Student Academic Record Permanently Frozen in Archive
+            </span>
+            <span className="font-mono text-red-300 font-bold">({tcRecord?.tcNumber || data.serialNo})</span>
+          </div>
+          <Link
+            href="/tc-register"
+            className="inline-flex items-center gap-1 font-bold text-red-100 hover:text-white underline shrink-0 transition-colors"
+          >
+            <span>View TC Register Archive &rarr;</span>
+          </Link>
+        </div>
+      ) : null}
+
       {/* Top Application Header Bar */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-stone-200 shadow-xs no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
@@ -219,6 +309,26 @@ export function TransferCertificateClient({
               <Printer className="w-4 h-4" />
               <span>Print TC</span>
             </button>
+
+            {/* Official TC Issue Button / Status Badge */}
+            {isTcIssued ? (
+              <Link
+                href="/tc-register"
+                className="flex items-center gap-1.5 bg-red-950/80 hover:bg-red-900 text-red-200 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border border-red-700 transition-colors shadow-xs"
+              >
+                <Lock className="w-4 h-4 text-red-400" />
+                <span>TC Archive</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIssueModalOpen(true)}
+                className="flex items-center gap-1.5 bg-red-700 hover:bg-red-600 active:bg-red-800 text-white px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-md hover:shadow-lg transition-all cursor-pointer border border-red-800"
+              >
+                <Award className="w-4 h-4" />
+                <span>Issue Official TC</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -489,6 +599,221 @@ export function TransferCertificateClient({
           </div>
         </div>
       </main>
+
+      {/* ── ISSUE OFFICIAL TC MODAL ────────────────────────────────────── */}
+      {issueModalOpen && (
+        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+          <div className="bg-white border border-stone-300 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200 bg-stone-50">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-red-100 text-red-700 flex items-center justify-center border border-red-200">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="font-black text-stone-900 text-sm uppercase">Issue Official Transfer Certificate</h2>
+                  <p className="text-[11px] text-stone-500">Maker-Checker governance • Permanently freezes academic folio</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIssueModalOpen(false);
+                  setIssueResultMsg(null);
+                }}
+                className="text-stone-400 hover:text-stone-700 transition-colors p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto text-xs text-stone-800">
+              {/* Scholar Information Readonly Card */}
+              <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 space-y-1">
+                <div className="flex justify-between font-bold text-stone-900">
+                  <span>{data.studentName}</span>
+                  <span className="font-mono text-stone-600">S.R. {data.admissionNo}</span>
+                </div>
+                <div className="text-[11px] text-stone-500 flex gap-4">
+                  <span>Father: {data.fatherName}</span>
+                  <span>DOB: {data.dateOfBirthFormatted}</span>
+                </div>
+              </div>
+
+              {/* 1. TC Number & Date of Leaving */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">
+                    TC Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={issueTcNumber}
+                    onChange={(e) => setIssueTcNumber(e.target.value)}
+                    placeholder="e.g. TC/2026/001"
+                    className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl font-mono font-bold text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">
+                    Date of Leaving <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={issueLeavingDate}
+                    onChange={(e) => setIssueLeavingDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* 2. Last Class Studied & Promoted To */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">
+                    Last Class Studied <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={issueLeavingClass}
+                    onChange={(e) => setIssueLeavingClass(e.target.value)}
+                    placeholder="e.g. Class 2"
+                    className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">
+                    Promoted To
+                  </label>
+                  <input
+                    type="text"
+                    value={issuePromotedTo}
+                    onChange={(e) => setIssuePromotedTo(e.target.value)}
+                    placeholder="e.g. Promoted to Class 3"
+                    className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* 3. Fee Dues Status & Conduct */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">
+                    Fee Dues Status
+                  </label>
+                  <input
+                    type="text"
+                    value={issueFeeDuesStatus}
+                    onChange={(e) => setIssueFeeDuesStatus(e.target.value)}
+                    placeholder="NIL (All dues cleared)"
+                    className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">
+                    Conduct / Behavior
+                  </label>
+                  <select
+                    value={issueConduct}
+                    onChange={(e) => setIssueConduct(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none font-bold"
+                  >
+                    {["Excellent", "Very Good", "Good", "Satisfactory", "Fair"].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 4. Reason for Leaving */}
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">
+                  Reason for Leaving
+                </label>
+                <select
+                  value={issueReason}
+                  onChange={(e) => setIssueReason(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none mb-1.5"
+                >
+                  <option value="Passed Higher Secondary / Matriculation">Passed Higher Secondary / Matriculation</option>
+                  <option value="Parent Transfer">Parent Transfer</option>
+                  <option value="Admission in Another School">Admission in Another School</option>
+                  <option value="Migration to Another City">Migration to Another City</option>
+                  <option value="Family Reason">Family Reason</option>
+                  <option value="Other">Other (Specify in Remarks)</option>
+                </select>
+              </div>
+
+              {/* 5. Remarks */}
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">
+                  TC Remarks (Optional)
+                </label>
+                <textarea
+                  value={issueRemarks}
+                  onChange={(e) => setIssueRemarks(e.target.value)}
+                  rows={2}
+                  placeholder="Additional notes for TC ledger..."
+                  className="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none resize-none"
+                />
+              </div>
+
+              {/* Status message */}
+              {issueResultMsg && (
+                <div
+                  className={`flex items-center gap-2 p-3 rounded-xl border text-xs font-bold ${
+                    issueResultMsg.ok
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                      : "bg-red-50 text-red-800 border-red-300"
+                  }`}
+                >
+                  {issueResultMsg.ok ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  )}
+                  <span>{issueResultMsg.msg}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Modal footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-stone-200 bg-stone-50">
+              <span className="text-[10px] text-stone-500">
+                Authorized staff submission • Maker-Checker audited
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIssueModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-stone-600 hover:text-stone-900 bg-white border border-stone-300 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleIssueOfficialTC}
+                  disabled={isIssuing}
+                  className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-red-700 hover:bg-red-600 active:bg-red-800 rounded-xl transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  {isIssuing ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Award className="w-3.5 h-3.5" />
+                      <span>Issue / Freeze Record</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

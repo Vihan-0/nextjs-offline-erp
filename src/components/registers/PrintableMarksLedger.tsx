@@ -1,5 +1,6 @@
 import React from "react";
 import { RawStudentData } from "./AccumulativeRegisterGrid";
+import { convertScoreOrGradeToLetterGrade } from "@/lib/classHierarchy";
 
 interface PrintableMarksLedgerProps {
   selectedClass: string;
@@ -51,18 +52,26 @@ export function PrintableMarksLedger({
     "P.T.",
   ];
 
-  // Format A Subject List
+  // Format A Subject List matching AccumulativeRegisterGrid keys
   const formatASubjects = [
-    { name: "English Lit", keyOral: "Eng Lit Oral", keyWri: "Eng Lit Wri" },
-    { name: "English Lang", keyOral: "Eng Lang Oral", keyWri: "Eng Lang Wri" },
-    { name: "Hindi Lit", keyOral: "Hin Lit Oral", keyWri: "Hin Lit Wri" },
-    { name: "Hindi Lang", keyOral: "Hin Lang Oral", keyWri: "Hin Lang Wri" },
-    { name: "Mathematics", keyOral: "Maths Oral", keyWri: "Maths Logic" },
-    { name: "EVS", keyOral: "EVS Oral", keyWri: "EVS Wri" },
-    { name: "GK", keyOral: "GK Oral", keyWri: "GK Wri" },
-    { name: "Computer", keyOral: "", keyWri: "Computer" },
-    { name: "Art/Craft", keyOral: "", keyWri: "Art/Craft" },
-    { name: "P.T.", keyOral: "", keyWri: "PT" },
+    { key: "English - Literature", label: "Eng Lit" },
+    { key: "English - Language", label: "Eng Lang" },
+    { key: "English - Writing / Dictation", label: "Eng Dict" },
+    { key: "English - Reading / Recitation", label: "Eng Read" },
+    { key: "Hindi - Literature", label: "Hin Lit" },
+    { key: "Hindi - Language", label: "Hin Lang" },
+    { key: "Hindi - Writing / Dictation", label: "Hin Dict" },
+    { key: "Hindi - Reading / Recitation", label: "Hin Read" },
+    { key: "Mathematics - Logic and calculation", label: "Math Logic" },
+    { key: "Mathematics - Mental ability", label: "Math Mental" },
+    { key: "Mathematics - Oral", label: "Math Oral" },
+    { key: "Environmental Education - Written", label: "EVS Written" },
+    { key: "Environmental Education - Oral", label: "EVS Oral" },
+    { key: "General Awareness - Written", label: "GK Written" },
+    { key: "General Awareness - Oral", label: "GK Oral" },
+    { key: "Computer - Theory/Practical", label: "Computer" },
+    { key: "Art & Craft", label: "Art/Craft" },
+    { key: "PT/Game", label: "P.T." },
   ];
 
   const computeTotalsForBOrC = (stData: any, subjects: string[]) => {
@@ -95,6 +104,28 @@ export function PrintableMarksLedger({
     else if (pct >= 33) grade = "D";
 
     return { totalObtained, maxTotal, percentage, grade };
+  };
+
+  const computeTotalsForA = (stData: any) => {
+    let totalObtained = 0;
+    let counted = 0;
+
+    formatASubjects.forEach((sub) => {
+      const markKey = `${sub.key}__${selectedTerm}`;
+      const mObj = stData?.marks?.[markKey];
+      const val = mObj?.total ?? mObj?.written ?? "";
+      const num = parseFloat(val);
+      if (!isNaN(num)) {
+        totalObtained += num;
+        counted++;
+      }
+    });
+
+    const maxTotal = counted * 100;
+    const percentage = maxTotal > 0 ? ((totalObtained / maxTotal) * 100).toFixed(1) : "—";
+    const grade = percentage !== "—" ? convertScoreOrGradeToLetterGrade(percentage) : "—";
+
+    return { totalObtained, maxTotal, percentage, grade, counted };
   };
 
   return (
@@ -298,10 +329,13 @@ export function PrintableMarksLedger({
                 <th className="border border-stone-800 p-1 w-6 text-center">Roll</th>
                 <th className="border border-stone-800 p-1 text-left min-w-[110px]">Scholar Name</th>
                 {formatASubjects.map((sub, idx) => (
-                  <th key={sub.name} className="border border-stone-800 p-1 text-center font-semibold">
-                    ({idx + 1}) {sub.name}
+                  <th key={sub.key} className="border border-stone-800 p-1 text-center font-semibold text-[8px] whitespace-nowrap">
+                    ({idx + 1}) {sub.label}
                   </th>
                 ))}
+                <th className="border border-stone-800 p-1 text-center bg-stone-200">Total</th>
+                <th className="border border-stone-800 p-1 text-center bg-stone-200">%</th>
+                <th className="border border-stone-800 p-1 text-center bg-stone-200">Grade</th>
                 <th className="border border-stone-800 p-1 text-center">Meetings</th>
                 <th className="border border-stone-800 p-1 text-center">Blood/Ht/Wt</th>
                 <th className="border border-stone-800 p-1 text-center">Result</th>
@@ -310,13 +344,14 @@ export function PrintableMarksLedger({
             <tbody>
               {students.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="p-4 text-center text-stone-500 italic">
+                  <td colSpan={24} className="p-4 text-center text-stone-500 italic">
                     No enrolled scholars found for this class and session.
                   </td>
                 </tr>
               ) : (
                 students.map((st) => {
                   const stData = gridData[st.srNumber] || {};
+                  const { totalObtained, percentage, grade, counted } = computeTotalsForA(stData);
 
                   return (
                     <tr key={st.srNumber} className="border-b border-stone-700 hover:bg-stone-50">
@@ -330,15 +365,24 @@ export function PrintableMarksLedger({
                         {stData.fullName || `${st.firstName} ${st.lastName}`}
                       </td>
                       {formatASubjects.map((sub) => {
-                        const markKey = `${sub.name}__${selectedTerm}`;
+                        const markKey = `${sub.key}__${selectedTerm}`;
                         const mObj = stData?.marks?.[markKey];
                         const markVal = mObj?.total ?? mObj?.grade ?? mObj?.written ?? "—";
                         return (
-                          <td key={sub.name} className="border border-stone-800 p-1 text-center font-mono">
+                          <td key={sub.key} className="border border-stone-800 p-1 text-center font-mono">
                             {markVal}
                           </td>
                         );
                       })}
+                      <td className="border border-stone-800 p-1 text-center font-mono font-bold bg-stone-50">
+                        {counted > 0 ? totalObtained : "—"}
+                      </td>
+                      <td className="border border-stone-800 p-1 text-center font-mono font-bold bg-stone-50">
+                        {percentage !== "—" ? `${percentage}%` : "—"}
+                      </td>
+                      <td className="border border-stone-800 p-1 text-center font-bold bg-stone-50 text-emerald-800">
+                        {grade}
+                      </td>
                       <td className="border border-stone-800 p-1 text-center font-mono">
                         {stData.attendancePresent || "—"} / {stData.attendanceTotal || "200"}
                       </td>

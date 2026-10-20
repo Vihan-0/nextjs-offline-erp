@@ -117,17 +117,17 @@ export function MidLevelsReportCard({
   const sessionYear = data.sessionYear || '2026-2027';
   const branch = data.branch || 'MAIN BRANCH';
   const aadhaarNo = data.aadhaarNo || '—';
-  const schoolReopenOn = data.schoolReopenOn || '01.07.2026';
-  const passedAndPromotedToClass = data.passedAndPromotedToClass || (isJunior ? 'CLASS IX' : 'CLASS VI');
-  const teacherRemark = data.teacherRemark || 'EXCELLENT ACADEMIC PERFORMANCE & CONSISTENT EFFORT';
-  const rankInClass = data.rankInClass || '1st ( R )';
-  const attendanceHY = data.attendanceHalfYearly || '92 / 96';
-  const attendanceAnnual = data.attendanceAnnual || '188 / 198 (95%)';
+  const passedAndPromotedToClass = data.passedAndPromotedToClass || '—';
+  const teacherRemark = data.teacherRemark || '—';
+  const rankInClass = data.rankInClass || '—';
+  const attendanceHY = data.attendanceHalfYearly || '—';
+  const attendanceAnnual = data.attendanceAnnual || '—';
+  const schoolReopenOn = '01.07.2026';
 
-  const GRADE_OPTIONS = ['A+', 'A', 'B+', 'B', 'C', 'D'];
+  const GRADE_OPTIONS = ['', 'A+', 'A', 'B+', 'B', 'C', 'D'];
 
   const renderGradeCell = (activity: string, term: 'halfYearly' | 'annual') => {
-    const val = data.grades?.[activity]?.[term] || 'A+';
+    const val = data.grades?.[activity]?.[term] || '—';
     if (!isEditable) return val;
     return (
       <select

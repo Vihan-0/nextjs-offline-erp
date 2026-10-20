@@ -21,6 +21,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { updateStudentAction } from "@/actions/student";
+import { MASTER_CLASS_HIERARCHY } from "@/lib/classHierarchy";
 
 export interface StudentEditData {
   srNumber: string;
@@ -37,20 +38,27 @@ export interface StudentEditData {
   allergies?: string | null;
   className?: string;
   sessionYear?: string;
+  admissionDate?: string | Date | null;
+  admissionClass?: string | null;
+  admissionSession?: string | null;
   fatherName?: string;
   fatherPhone?: string | null;
   fatherOccupation?: string | null;
   fatherEducation?: string | null;
   fatherIncome?: number | null;
+  fatherAadhar?: string | null;
   motherName?: string;
   motherPhone?: string | null;
   motherOccupation?: string | null;
   motherEducation?: string | null;
   motherIncome?: string | null;
+  motherAadhar?: string | null;
+  parentPan?: string | null;
   address?: string | null;
   currentAddress?: string | null;
   permanentAddress?: string | null;
   aadharNumber?: string | null;
+  penNumber?: string | null;
   apaarId?: string | null;
   photoPath?: string | null;
 }
@@ -89,6 +97,13 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
   // Academic
   const [className, setClassName] = useState(student.className || "CLASS I");
   const [sessionYear, setSessionYear] = useState(student.sessionYear || "2026-2027");
+  const [admissionClass, setAdmissionClass] = useState(student.admissionClass || student.className || "CLASS I");
+  const [admissionSession, setAdmissionSession] = useState(student.admissionSession || student.sessionYear || "2026-2027");
+  const [admissionDate, setAdmissionDate] = useState<string>(() => {
+    if (!student.admissionDate) return "";
+    const d = new Date(student.admissionDate);
+    return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
+  });
 
   // Parents
   const [fatherName, setFatherName] = useState(student.fatherName || "");
@@ -98,6 +113,7 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
   const [fatherIncome, setFatherIncome] = useState(
     student.fatherIncome ? String(student.fatherIncome) : ""
   );
+  const [fatherAadhar, setFatherAadhar] = useState(student.fatherAadhar || "");
 
   const [motherName, setMotherName] = useState(student.motherName || "");
   const [motherPhone, setMotherPhone] = useState(student.motherPhone || "");
@@ -106,12 +122,16 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
   const [motherIncome, setMotherIncome] = useState(
     student.motherIncome ? String(student.motherIncome) : ""
   );
+  const [motherAadhar, setMotherAadhar] = useState(student.motherAadhar || "");
+
+  const [parentPan, setParentPan] = useState(student.parentPan || "");
 
   const [address, setAddress] = useState(student.address || "");
   const [currentAddress, setCurrentAddress] = useState(student.currentAddress || "");
   const [permanentAddress, setPermanentAddress] = useState(student.permanentAddress || "");
   const [isSameAddress, setIsSameAddress] = useState(false);
   const [aadharNumber, setAadharNumber] = useState(student.aadharNumber || "");
+  const [penNumber, setPenNumber] = useState(student.penNumber || "");
   const [apaarId, setApaarId] = useState(student.apaarId || "");
 
   // Sync addresses if checked
@@ -155,23 +175,30 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
 
       formData.append("className", className);
       formData.append("sessionYear", sessionYear);
+      formData.append("admissionClass", admissionClass);
+      formData.append("admissionSession", admissionSession);
+      if (admissionDate) formData.append("admissionDate", admissionDate);
 
       formData.append("fatherName", fatherName);
       formData.append("fatherPhone", fatherPhone);
       formData.append("fatherOccupation", fatherOccupation);
       formData.append("fatherEducation", fatherEducation);
       formData.append("fatherIncome", fatherIncome);
+      formData.append("fatherAadhar", fatherAadhar);
 
       formData.append("motherName", motherName);
       formData.append("motherPhone", motherPhone);
       formData.append("motherOccupation", motherOccupation);
       formData.append("motherEducation", motherEducation);
       if (motherIncome) formData.append("motherIncome", motherIncome);
+      formData.append("motherAadhar", motherAadhar);
 
+      formData.append("parentPan", parentPan);
       formData.append("address", address);
       formData.append("currentAddress", currentAddress);
       formData.append("permanentAddress", permanentAddress);
       formData.append("aadharNumber", aadharNumber);
+      formData.append("penNumber", penNumber);
       formData.append("apaarId", apaarId);
 
       if (photoFile) formData.append("photo", photoFile);
@@ -189,7 +216,7 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
         setTimeout(() => {
           router.refresh();
           onClose();
-        }, 1500);
+        }, 2200);
       } else {
         setStatus({ success: false, message: res.error || "Failed to update record." });
       }
@@ -433,7 +460,7 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-zinc-300 mb-1">
-                    Aadhaar Number
+                    Student Aadhaar Number
                   </label>
                   <input
                     type="text"
@@ -446,14 +473,41 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-zinc-300 mb-1">
-                    APAAR / PEN ID
+                    Date of Admission
+                  </label>
+                  <input
+                    type="date"
+                    value={admissionDate}
+                    onChange={(e) => setAdmissionDate(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">
+                    UDISE+ PEN Number (11 Digits)
+                  </label>
+                  <input
+                    type="text"
+                    value={penNumber}
+                    onChange={(e) => setPenNumber(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    placeholder="11-digit PEN"
+                    maxLength={11}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">
+                    APAAR ID (12 Digits)
                   </label>
                   <input
                     type="text"
                     value={apaarId}
                     onChange={(e) => setApaarId(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
-                    placeholder="12-digit APAAR/PEN"
+                    placeholder="12-digit APAAR"
                     maxLength={12}
                   />
                 </div>
@@ -522,6 +576,17 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
                     />
                   </div>
                 </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">Father's Aadhaar Number (12 Digits)</label>
+                  <input
+                    type="text"
+                    value={fatherAadhar}
+                    onChange={(e) => setFatherAadhar(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    placeholder="XXXX XXXX XXXX"
+                    maxLength={14}
+                  />
+                </div>
               </div>
 
               <div className="bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800 space-y-3">
@@ -550,7 +615,7 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-zinc-300 mb-1">Mother Occupation</label>
                     <input
@@ -582,6 +647,30 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
                     />
                   </div>
                 </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">Mother's Aadhaar Number (12 Digits)</label>
+                  <input
+                    type="text"
+                    value={motherAadhar}
+                    onChange={(e) => setMotherAadhar(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    placeholder="XXXX XXXX XXXX"
+                    maxLength={14}
+                  />
+                </div>
+              </div>
+
+              {/* Parent PAN */}
+              <div className="bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800 space-y-2">
+                <label className="block text-xs font-bold text-zinc-300">Parent / Guardian PAN Number (10 Chars)</label>
+                <input
+                  type="text"
+                  value={parentPan}
+                  onChange={(e) => setParentPan(e.target.value.toUpperCase())}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-mono uppercase focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                  placeholder="e.g. ABCDE1234F"
+                  maxLength={10}
+                />
               </div>
 
               <div className="space-y-4">
@@ -638,28 +727,48 @@ export function EditStudentModal({ student, isOpen, onClose }: EditStudentModalP
                     onChange={(e) => setClassName(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-bold focus:ring-1 focus:ring-amber-500 focus:outline-none cursor-pointer"
                   >
-                    <option value="NURSERY">NURSERY</option>
-                    <option value="L.K.G.">L.K.G.</option>
-                    <option value="U.K.G.">U.K.G.</option>
-                    <option value="CLASS I">CLASS I</option>
-                    <option value="CLASS II">CLASS II</option>
-                    <option value="CLASS III">CLASS III</option>
-                    <option value="CLASS IV">CLASS IV</option>
-                    <option value="CLASS V">CLASS V</option>
-                    <option value="CLASS VI">CLASS VI</option>
-                    <option value="CLASS VII">CLASS VII</option>
-                    <option value="CLASS VIII">CLASS VIII</option>
-                    <option value="CLASS IX">CLASS IX</option>
-                    <option value="CLASS X">CLASS X</option>
+                    {MASTER_CLASS_HIERARCHY.map((cls) => (
+                      <option key={cls} value={cls}>
+                        {cls}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-zinc-300 mb-1">Session Year</label>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">Current Session Year</label>
                   <input
                     type="text"
                     value={sessionYear}
                     onChange={(e) => setSessionYear(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    placeholder="2026-2027"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">Class of Admission</label>
+                  <select
+                    value={admissionClass}
+                    onChange={(e) => setAdmissionClass(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-bold focus:ring-1 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                  >
+                    {MASTER_CLASS_HIERARCHY.map((cls) => (
+                      <option key={cls} value={cls}>
+                        {cls}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1">Admission Session</label>
+                  <input
+                    type="text"
+                    value={admissionSession}
+                    onChange={(e) => setAdmissionSession(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-100 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
                     placeholder="2026-2027"
                   />

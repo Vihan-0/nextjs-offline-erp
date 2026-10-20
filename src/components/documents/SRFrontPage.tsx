@@ -18,6 +18,9 @@ export interface SRFrontPageData {
   category?: string;
   nationality?: string;
   distanceFromSchool?: number | string;
+  studentAadharNumber?: string;
+  studentPenNumber?: string;
+  studentApaarId?: string;
   photoPath?: string | null;
 
   // Parents / Guardians
@@ -31,6 +34,8 @@ export interface SRFrontPageData {
   motherQualification?: string;
   motherOccupation?: string;
   motherPhone?: string;
+  fatherAadhar?: string;
+  motherAadhar?: string;
 
   parentPanMasked?: string;
   parentPhotoPath?: string | null;
@@ -111,9 +116,11 @@ export function SRFrontPage({ data, className = "" }: SRFrontPageProps) {
                 <p className="text-[9px] text-stone-600 mt-0.5 font-sans">
                   {schoolAddress}
                 </p>
-                <p className="text-[8.5px] text-stone-500 font-sans">
-                  {schoolPhone}
-                </p>
+                <div className="flex items-center justify-center gap-2 text-[8.5px] text-stone-600 font-sans mt-0.5">
+                  <span>{schoolPhone}</span>
+                  <span>•</span>
+                  <span className="font-bold text-stone-900 tracking-wider">UDISE No.: 09270916593</span>
+                </div>
 
                 <div className="mt-1.5 inline-block bg-stone-900 text-white px-5 py-0.5 rounded-sm">
                   <h2 className="text-[12px] font-black uppercase tracking-widest">
@@ -238,10 +245,17 @@ export function SRFrontPage({ data, className = "" }: SRFrontPageProps) {
                     <span className="capitalize">{data.nationality || "Indian"}</span>
                   </td>
                   <td className="border border-stone-900 px-2 py-1 bg-stone-50 font-bold uppercase">
-                    6. Distance from School
+                    6. Student Aadhaar / PEN / APAAR
                   </td>
                   <td className="border border-stone-900 px-2 py-1 font-semibold">
-                    {data.distanceFromSchool ? `${data.distanceFromSchool} KM` : "—"}
+                    <div>
+                      <span className="font-mono font-bold">{data.studentAadharNumber || "—"}</span>
+                      {(data.studentPenNumber || data.studentApaarId) && (
+                        <div className="text-[9px] text-stone-700 font-mono mt-0.5">
+                          PEN: {data.studentPenNumber || "—"} | APAAR: {data.studentApaarId || "—"}
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -320,6 +334,18 @@ export function SRFrontPage({ data, className = "" }: SRFrontPageProps) {
                     </td>
                     <td className="border border-stone-900 px-2 py-0.5 font-mono font-bold text-[9.5px]">
                       {data.motherPhone || "—"}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td className="border border-stone-900 px-2 py-0.5 bg-stone-50 font-bold uppercase">
+                      Aadhaar Number (12-Digit)
+                    </td>
+                    <td className="border border-stone-900 px-2 py-0.5 font-mono font-bold text-[9.5px]">
+                      {data.fatherAadhar ? `•••• •••• ${data.fatherAadhar.replace(/\s/g, "").slice(-4)}` : "—"}
+                    </td>
+                    <td className="border border-stone-900 px-2 py-0.5 font-mono font-bold text-[9.5px]">
+                      {data.motherAadhar ? `•••• •••• ${data.motherAadhar.replace(/\s/g, "").slice(-4)}` : "—"}
                     </td>
                   </tr>
 
@@ -448,34 +474,20 @@ export function SRFrontPage({ data, className = "" }: SRFrontPageProps) {
               )}
             </div>
 
-            {/* Signature Blocks */}
-            <div className="grid grid-cols-4 gap-2 pt-4 text-center text-[9px]">
-              <div className="border-t border-stone-900 pt-1">
-                <span className="font-bold uppercase block text-stone-900">
-                  Signature of Parent / Guardian
-                </span>
-                <span className="text-[7.5px] text-stone-500 block mt-0.5">Date: ____________</span>
-              </div>
-
-              <div className="border-t border-stone-900 pt-1">
-                <span className="font-bold uppercase block text-stone-900">
-                  Class Teacher
-                </span>
-                <span className="text-[7.5px] text-stone-500 block mt-0.5">Verified By</span>
-              </div>
-
-              <div className="border-t border-stone-900 pt-1">
+            {/* Signature Blocks - 2 Column Clean Layout */}
+            <div className="grid grid-cols-2 gap-12 pt-6 text-center text-[10px]">
+              <div className="border-t border-stone-900 pt-1.5">
                 <span className="font-bold uppercase block text-stone-900">
                   Admission In-Charge
                 </span>
-                <span className="text-[7.5px] text-stone-500 block mt-0.5">Checked & Entered</span>
+                <span className="text-[8px] text-stone-500 block mt-0.5">Checked & Entered into Scholar Register</span>
               </div>
 
-              <div className="border-t border-stone-900 pt-1">
+              <div className="border-t border-stone-900 pt-1.5">
                 <span className="font-bold uppercase block text-stone-900">
                   Principal / Headmaster
                 </span>
-                <span className="text-[7.5px] text-stone-500 block mt-0.5">Town Hall Public High School</span>
+                <span className="text-[8px] text-stone-500 block mt-0.5">Town Hall Public High School</span>
               </div>
             </div>
           </div>

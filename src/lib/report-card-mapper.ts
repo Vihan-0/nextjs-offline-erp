@@ -232,6 +232,7 @@ export async function fetchLiveSubjectMarks(
     where: {
       academicSession: {
         studentSrNumber: cleanSr,
+        ...(academicSessionId ? { id: academicSessionId } : {}),
       },
     },
     orderBy: { updatedAt: "desc" },

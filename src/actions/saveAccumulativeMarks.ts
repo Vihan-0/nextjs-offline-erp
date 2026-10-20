@@ -3,6 +3,7 @@
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { recordAuditLogAction } from "./audit";
+import { normalizeSessionYear, areSessionsEqual, resolveClassIndex, resolveCanonicalClassName } from "@/lib/classHierarchy";
 
 export interface MarkItemPayload {
   subjectName: string;
@@ -64,6 +65,10 @@ export async function saveAccumulativeMarksAction(payload: SaveAccumulativeMarks
         });
 
         if (!student) continue;
+
+        if (student.recordStatus === "TC_ISSUED") {
+          throw new Error("This student's Transfer Certificate has been issued. Their academic record is permanently frozen in the TC Register and cannot be modified.");
+        }
 
         // 2. Update Student demographics & physical metrics
         let medicalNotes = student.medicalConditions || "";
@@ -130,20 +135,26 @@ export async function saveAccumulativeMarksAction(payload: SaveAccumulativeMarks
         }
 
         // 4. Find or create AcademicSession for this student, class and sessionYear
-        let academicSession = await tx.academicSession.findFirst({
-          where: {
-            studentSrNumber: entry.srNumber,
-            sessionYear: sessionYear,
-            className: className,
-          },
+        // Use areSessionsEqual & resolveClassIndex to prevent duplicate rows across short vs long session formats
+        const allStudentSessions = await tx.academicSession.findMany({
+          where: { studentSrNumber: entry.srNumber },
         });
+
+        const canonicalClass = resolveCanonicalClassName(className);
+        const canonicalYear = normalizeSessionYear(sessionYear);
+
+        let academicSession = allStudentSessions.find(
+          (s) =>
+            areSessionsEqual(s.sessionYear, sessionYear) &&
+            resolveClassIndex(s.className) === resolveClassIndex(className)
+        );
 
         if (!academicSession) {
           academicSession = await tx.academicSession.create({
             data: {
               studentSrNumber: entry.srNumber,
-              sessionYear: sessionYear,
-              className: className,
+              sessionYear: canonicalYear,
+              className: canonicalClass,
               rollNumber: entry.rollNumber || null,
               totalMeetingsPresent: entry.attendancePresent !== undefined ? entry.attendancePresent : null,
               totalMeetings: entry.attendanceTotal !== undefined ? entry.attendanceTotal : null,
@@ -176,6 +187,24 @@ export async function saveAccumulativeMarksAction(payload: SaveAccumulativeMarks
         if (entry.marks && entry.marks.length > 0) {
           for (const m of entry.marks) {
             if (!m.subjectName || !m.examType) continue;
+
+            // Enforce marks validation: prevent negative marks
+            if (
+              (m.oralMarksObtained !== null && m.oralMarksObtained !== undefined && m.oralMarksObtained < 0) ||
+              (m.writtenMarksObtained !== null && m.writtenMarksObtained !== undefined && m.writtenMarksObtained < 0) ||
+              (m.totalMarksObtained !== null && m.totalMarksObtained !== undefined && m.totalMarksObtained < 0)
+            ) {
+              throw new Error(`Negative marks are not allowed for ${m.subjectName} (${m.examType}).`);
+            }
+
+            // Enforce marks validation: prevent marks exceeding maxMarks
+            if (
+              (m.oralMarksObtained !== null && m.oralMarksObtained !== undefined && m.oralMaxMarks !== null && m.oralMaxMarks !== undefined && m.oralMarksObtained > m.oralMaxMarks) ||
+              (m.writtenMarksObtained !== null && m.writtenMarksObtained !== undefined && m.writtenMaxMarks !== null && m.writtenMaxMarks !== undefined && m.writtenMarksObtained > m.writtenMaxMarks) ||
+              (m.totalMarksObtained !== null && m.totalMarksObtained !== undefined && m.totalMaxMarks !== null && m.totalMaxMarks !== undefined && m.totalMarksObtained > m.totalMaxMarks)
+            ) {
+              throw new Error(`Marks obtained cannot exceed maximum marks for ${m.subjectName} (${m.examType}).`);
+            }
 
             const existingMark = await tx.mark.findFirst({
               where: {
@@ -286,6 +315,9 @@ export async function saveAccumulativeMarksAction(payload: SaveAccumulativeMarks
         revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-cards/pre-primary`);
         revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-cards/class-ix`);
         revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-card`);
+        revalidatePath(`/students/${encodeURIComponent(cleanSr)}/sr-back-page`);
+        revalidatePath(`/students/${encodeURIComponent(cleanSr)}/sr-front-page`);
+        revalidatePath(`/students/${encodeURIComponent(cleanSr)}/transfer-certificate`);
       }
     });
 
@@ -364,26 +396,34 @@ export async function saveReportCardOverrideAction(payload: SaveReportCardOverri
       return { success: false, error: `Student with S.R. Number "${cleanSr}" not found.` };
     }
 
-    // Find or create session
-    let session = await prisma.academicSession.findFirst({
-      where: {
-        studentSrNumber: cleanSr,
-        sessionYear: sessionYear,
-        className: className,
-      },
-    });
+    if (student.recordStatus === "TC_ISSUED") {
+      return {
+        success: false,
+        error: "This student's Transfer Certificate has been issued. Their academic record is permanently frozen in the TC Register and cannot be modified.",
+      };
+    }
+
+    // Find or create session using areSessionsEqual & resolveClassIndex to prevent duplicate rows
+    const canonicalClass = resolveCanonicalClassName(className);
+    const canonicalYear = normalizeSessionYear(sessionYear);
+
+    let session = student.academicSessions.find(
+      (s) =>
+        areSessionsEqual(s.sessionYear, sessionYear) &&
+        resolveClassIndex(s.className) === resolveClassIndex(className)
+    );
 
     if (!session) {
       session = await prisma.academicSession.create({
         data: {
           studentSrNumber: cleanSr,
-          sessionYear: sessionYear,
-          className: className,
+          sessionYear: canonicalYear,
+          className: canonicalClass,
           resultStatus: passedAndPromotedToClass ? `Promoted to ${passedAndPromotedToClass}` : "Enrolled",
         },
       });
     } else {
-      await prisma.academicSession.update({
+      session = await prisma.academicSession.update({
         where: { id: session.id },
         data: {
           resultStatus: passedAndPromotedToClass ? `Promoted to ${passedAndPromotedToClass}` : session.resultStatus,
@@ -509,8 +549,14 @@ export async function saveReportCardOverrideAction(payload: SaveReportCardOverri
     revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-cards/lower-primary`);
     revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-cards/pre-primary`);
     revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-cards/class-ix`);
+    revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-card`);
+    revalidatePath(`/students/${encodeURIComponent(cleanSr)}/sr-back-page`);
+    revalidatePath(`/students/${encodeURIComponent(cleanSr)}/sr-front-page`);
+    revalidatePath(`/students/${encodeURIComponent(cleanSr)}/transfer-certificate`);
     revalidatePath("/director-dashboard");
     revalidatePath("/registers/data-entry");
+    revalidatePath("/directory");
+    revalidatePath("/");
 
     return {
       success: true,
@@ -610,9 +656,9 @@ export async function updateStudentSubjectMark(payload: UpdateStudentSubjectMark
       else if (normalizedExam === "Half Yearly" || normalizedExam === "Annual") numMax = 70;
     }
 
-    // Calculate Grade if score is present
+    // Calculate Grade if score is present and max marks > 0
     let grade: string | null = null;
-    if (numScore !== null) {
+    if (numScore !== null && numMax > 0) {
       const pct = (numScore / numMax) * 100;
       if (pct >= 91) grade = "A1";
       else if (pct >= 81) grade = "A2";
@@ -639,17 +685,39 @@ export async function updateStudentSubjectMark(payload: UpdateStudentSubjectMark
       return { success: false, error: `Student with S.R. No "${cleanSr}" not found.` };
     }
 
+    if (student.recordStatus === "TC_ISSUED") {
+      return {
+        success: false,
+        error: "This student's Transfer Certificate has been issued. Their academic record is permanently frozen in the TC Register and cannot be modified.",
+      };
+    }
+
+    if (numScore !== null) {
+      if (numScore < 0) {
+        return { success: false, error: "Negative marks are not allowed." };
+      }
+      if (numMax > 0 && numScore > numMax) {
+        return { success: false, error: `Marks obtained (${numScore}) cannot exceed maximum marks (${numMax}).` };
+      }
+    }
+
     // Resolve or create academic session
     let targetSession = academicSessionId
       ? student.academicSessions.find((s) => s.id === academicSessionId)
+      : (className || sessionYear)
+      ? student.academicSessions.find(
+          (s) =>
+            areSessionsEqual(s.sessionYear, sessionYear) &&
+            resolveClassIndex(s.className) === resolveClassIndex(className || "")
+        )
       : student.academicSessions[0];
 
     if (!targetSession) {
       targetSession = await prisma.academicSession.create({
         data: {
           studentSrNumber: cleanSr,
-          sessionYear: sessionYear || "2026-2027",
-          className: className || "CLASS V",
+          sessionYear: normalizeSessionYear(sessionYear),
+          className: resolveCanonicalClassName(className || "Class 5"),
         },
       });
     }
@@ -710,6 +778,9 @@ export async function updateStudentSubjectMark(payload: UpdateStudentSubjectMark
     revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-cards/pre-primary`);
     revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-cards/class-ix`);
     revalidatePath(`/students/${encodeURIComponent(cleanSr)}/report-card`);
+    revalidatePath(`/students/${encodeURIComponent(cleanSr)}/sr-back-page`);
+    revalidatePath(`/students/${encodeURIComponent(cleanSr)}/sr-front-page`);
+    revalidatePath(`/students/${encodeURIComponent(cleanSr)}/transfer-certificate`);
     revalidatePath("/registers/data-entry");
     revalidatePath("/directory");
 
@@ -780,6 +851,13 @@ export async function updateStudentSoftSkillMark(payload: UpdateSoftSkillPayload
 
     if (!student) {
       return { success: false, error: `Student with S.R. No "${cleanSr}" not found.` };
+    }
+
+    if (student.recordStatus === "TC_ISSUED") {
+      return {
+        success: false,
+        error: "This student's Transfer Certificate has been issued. Their academic record is permanently frozen in the TC Register and cannot be modified.",
+      };
     }
 
     let targetSession = academicSessionId
